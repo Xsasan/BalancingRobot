@@ -1,5 +1,6 @@
 #include "I2Cdev.h"
 #include <digitalWriteFast.h>
+#include "notes.h"
 
 // --------------------- START custom settings ---------------------
 const float INITIAL_TARGET_ANGLE = 2.0;
@@ -43,6 +44,8 @@ const int PIN_MOTOR_1_STEP = 13;
 const int PIN_MOTOR_2_STEP = 12;
 const int PIN_MOTOR_1_DIRECTION = 10;
 const int PIN_MOTOR_2_DIRECTION = 9;
+
+const int PIN_BUZZER = 3;
 // ---------------------  END wiring settings  ---------------------
 
 // --------------------- START calculated constants ---------------------
@@ -141,6 +144,20 @@ float pid_position_i_motor1;
 float pid_position_i_motor2;
 // ---------------------  END pid variables  ---------------------
 
+// ------------------------ START music ------------------------
+// notes in the melody:
+int melody[] = {
+  C4, 250, 30,
+  G3, 125, 30,
+  G3, 125, 30,
+  A3, 250, 30,
+  G3, 250, 300,
+  B3, 250, 30,
+  C4, 250, 30
+};
+float melodySpeedSlowdown = 1.1;
+// ------------------------  END music  ------------------------
+
 boolean enable = false;
 
 void setup() {
@@ -154,13 +171,27 @@ void setup() {
   pinMode(PIN_MOTOR_1_DIRECTION, OUTPUT);
   pinMode(PIN_MOTOR_2_DIRECTION, OUTPUT);
 
+  // set buzzer pin to output mode
+  pinMode(PIN_BUZZER, OUTPUT);
+
   // initialize stepper by doing one step
   stepMotor(MOTOR_LEFT_ID,1);
   stepMotor(MOTOR_RIGHT_ID,1);
 
   setupMPU9250();
 
+  startupMelody();
+
   waitForTargetAngle();
+}
+
+void startupMelody(){   
+  for (int thisNote = 0; thisNote < sizeof(melody)/sizeof(int); thisNote+=3) {
+    tone(PIN_BUZZER, melody[thisNote], melody[thisNote+1]);
+
+    delay(melodySpeedSlowdown*(melody[thisNote+1] + melody[thisNote+2]));
+  }
+  noTone(PIN_BUZZER);
 }
 
 void waitForTargetAngle(){
@@ -181,21 +212,9 @@ void waitForTargetAngle(){
 }
 
 void loop() {
-    if (Serial.available() > 0){
-      Serial.setTimeout(50); // we don't want to wait for the usual 1 second timeout as the bot would tipover
-      delay(5);
-      pid_position_setpoint_motor1 = Serial.parseInt();
-      delay(5);
-      pid_position_setpoint_motor2 = Serial.parseInt();
-      delay(5);
-      while(Serial.available() > 0) {
-        volatile char character = Serial.read(); // clear buffer of remaining characters
-      }
-      Serial.print("understood: ");
-      Serial.print(pid_position_setpoint_motor1);
-      Serial.print(" ");
-      Serial.println(pid_position_setpoint_motor2);
-    }
+    serialRead();
+
+    playTone();
     
     if (!enable){
       waitForTargetAngle();
@@ -243,6 +262,28 @@ void loop() {
     int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, stepTimeMicros_motor2);
     stepMotor(MOTOR_LEFT_ID, stepCount_motor1);
     stepMotor(MOTOR_RIGHT_ID, stepCount_motor2);
+}
+
+void serialRead(){
+  if (Serial.available() > 0){
+      Serial.setTimeout(50); // we don't want to wait for the usual 1 second timeout as the bot would tipover
+      delay(5);
+      pid_position_setpoint_motor1 = Serial.parseInt();
+      delay(5);
+      pid_position_setpoint_motor2 = Serial.parseInt();
+      delay(5);
+      while(Serial.available() > 0) {
+        volatile char character = Serial.read(); // clear buffer of remaining characters
+      }
+      Serial.print("understood: ");
+      Serial.print(pid_position_setpoint_motor1);
+      Serial.print(" ");
+      Serial.println(pid_position_setpoint_motor2);
+   }
+}
+
+void playTone(){
+  
 }
 
 void calculatePitch() {
