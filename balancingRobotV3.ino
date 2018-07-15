@@ -4,10 +4,13 @@
 
 // --------------------- START custom settings ---------------------
 const float INITIAL_TARGET_ANGLE = 2.0;
-const float TIPOVER_ANGLE_OFFSET = 45; // stop motors if bot has tipped over
+const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
 const float MAX_FULL_STEPS_PER_SECOND = 900;
 const float MAX_ACCELLERATION = 250.0;
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.9992; // how much to use gyro value compared to acceleratometer value
+
+const float MAX_BODY_SPEED_FACTOR = 0.25;
+const float SPEED_TO_POS_RAMPUP_MILLIS = 1000;
 // ---------------------  END custom settings  ---------------------
 
 // --------------------- START PID settings ---------------------
@@ -49,10 +52,10 @@ const int PIN_BUZZER = 3;
 // ---------------------  END wiring settings  ---------------------
 
 // --------------------- START calculated constants ---------------------
-const int STEPS_PER_ROTATION = MOTOR_STEPS_PER_360*MICROSTEPPING;
-const float STEPS_PER_DEGREE = STEPS_PER_ROTATION/360.0;
-const int MAX_STEPS_PER_SECOND = MAX_FULL_STEPS_PER_SECOND*MICROSTEPPING;
-const int MIN_STEP_FREQUENCY_MICROS = 1000000/MAX_STEPS_PER_SECOND;
+const int STEPS_PER_ROTATION = MOTOR_STEPS_PER_360 * MICROSTEPPING;
+const float STEPS_PER_DEGREE = STEPS_PER_ROTATION / 360.0;
+const int MAX_STEPS_PER_SECOND = MAX_FULL_STEPS_PER_SECOND * MICROSTEPPING;
+const int MIN_STEP_FREQUENCY_MICROS = 1000000 / MAX_STEPS_PER_SECOND;
 // ---------------------  END calculated constants  ---------------------
 
 // --------------------- START various constants ---------------------
@@ -164,7 +167,7 @@ void setup() {
   Serial.begin(57600); // startup serial communication with given baud rate
   Serial.println("\nStartup...");
   readAndInitErrorRegister(); // log the cause of the last restart, i.e. power loss
-  
+
   // set motor control pins to output mode
   pinMode(PIN_MOTOR_1_STEP, OUTPUT);
   pinMode(PIN_MOTOR_2_STEP, OUTPUT);
@@ -175,8 +178,8 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
 
   // initialize stepper by doing one step
-  stepMotor(MOTOR_LEFT_ID,1);
-  stepMotor(MOTOR_RIGHT_ID,1);
+  stepMotor(MOTOR_LEFT_ID, 1);
+  stepMotor(MOTOR_RIGHT_ID, 1);
 
   setupMPU9250();
 
@@ -185,23 +188,23 @@ void setup() {
   waitForTargetAngle();
 }
 
-void startupMelody(){   
-  for (int thisNote = 0; thisNote < sizeof(melody)/sizeof(int); thisNote+=3) {
-    tone(PIN_BUZZER, melody[thisNote], melody[thisNote+1]);
+void startupMelody() {
+  for (int thisNote = 0; thisNote < sizeof(melody) / sizeof(int); thisNote += 3) {
+    tone(PIN_BUZZER, melody[thisNote], melody[thisNote + 1]);
 
-    delay(melodySpeedSlowdown*(melody[thisNote+1] + melody[thisNote+2]));
+    delay(melodySpeedSlowdown * (melody[thisNote + 1] + melody[thisNote + 2]));
   }
   noTone(PIN_BUZZER);
 }
 
-void waitForTargetAngle(){
-  // wait until bot is reasonably near target angle so we can start  
+void waitForTargetAngle() {
+  // wait until bot is reasonably near target angle so we can start
   Serial.println("Wait until bot alignment is near target angle...");
   int correctAngleCount = 0;
-  while(correctAngleCount < 50){
+  while (correctAngleCount < 50) {
     getAccelGyroData();
     calculatePitch();
-    if (abs(INITIAL_TARGET_ANGLE-pitch) < 1.0){
+    if (abs(INITIAL_TARGET_ANGLE - pitch) < 2.0) {
       correctAngleCount++;
     } else {
       correctAngleCount = 0;
@@ -211,18 +214,23 @@ void waitForTargetAngle(){
   Serial.println("done!");
 }
 
-void loop() {
-    serialRead();
+boolean getAccelGyro = true;
 
-    playTone();
-    
-    if (!enable){
-      waitForTargetAngle();
-    }
+void loop() {
+  serialRead();
+
+  playTone();
+
+  unsigned long timex = micros();
+  if (!enable) {
+    waitForTargetAngle();
+  }
+  getAccelGyro = !getAccelGyro;
+  if (getAccelGyro){
     getAccelGyroData();
     calculatePitch();
-    
-    if (abs(pitch-INITIAL_TARGET_ANGLE) > TIPOVER_ANGLE_OFFSET){
+
+    if (abs(pitch - INITIAL_TARGET_ANGLE) > TIPOVER_ANGLE_OFFSET) {
       enable = false;
       //stepsPerSecond = 0;
       stepsPerSecond_motor1 = 0;
@@ -239,251 +247,268 @@ void loop() {
       pid_position_i_motor1 = 0;
       pid_position_i_motor2 = 0;
       bodySpeed = 0;
+      
+      pid_position_setpoint_motor1 = 0;
+      pid_position_setpoint_motor2 = 0;
       return;
     }
-
-    //calculatePidPosition();
-    pid_position_output_motor1 = calculatePidPosition(pid_position_setpoint_motor1, pid_position_i_motor1, pid_position_error_motor1, motor_steps[1]);
-    pid_position_output_motor2 = calculatePidPosition(pid_position_setpoint_motor2, pid_position_i_motor2, pid_position_error_motor2, motor_steps[0]);
-    calculatePidSpeedSetpoint();
-    
-    calculateBodySpeed();
-    //calculatePidSpeed();
-    pid_speed_output_motor1 = calculatePidSpeed(pid_speed_setpoint_motor1, pid_speed_i_motor1, pid_speed_error_motor1);
-    pid_speed_output_motor2 = calculatePidSpeed(pid_speed_setpoint_motor2, pid_speed_i_motor2, pid_speed_error_motor2);
-    
-    calculatePidAngleSetpoint();
-    //calculatePidAngle();
-    pid_angle_output_motor1 = calculatePidAngle(pid_angle_setpoint_motor1, pid_angle_i_motor1, pid_angle_error_motor1);
-    pid_angle_output_motor2 = calculatePidAngle(pid_angle_setpoint_motor2, pid_angle_i_motor2, pid_angle_error_motor2);
-
-    //int stepCount = calculateStepCount();
-    int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, stepTimeMicros_motor1);
-    int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, stepTimeMicros_motor2);
-    stepMotor(MOTOR_LEFT_ID, stepCount_motor1);
-    stepMotor(MOTOR_RIGHT_ID, stepCount_motor2);
-}
-
-void serialRead(){
-  if (Serial.available() > 0){
-      Serial.setTimeout(50); // we don't want to wait for the usual 1 second timeout as the bot would tipover
-      delay(5);
-      pid_position_setpoint_motor1 = Serial.parseInt();
-      delay(5);
-      pid_position_setpoint_motor2 = Serial.parseInt();
-      delay(5);
-      while(Serial.available() > 0) {
-        volatile char character = Serial.read(); // clear buffer of remaining characters
-      }
-      Serial.print("understood: ");
-      Serial.print(pid_position_setpoint_motor1);
-      Serial.print(" ");
-      Serial.println(pid_position_setpoint_motor2);
-   }
-}
-
-void playTone(){
+  } else {
   
+  //calculatePidPosition();
+  
+  pid_position_output_motor1 = calculatePidPosition(pid_position_setpoint_motor1, pid_position_i_motor1, pid_position_error_motor1, motor_steps[MOTOR_RIGHT_ID]);
+  pid_position_output_motor2 = calculatePidPosition(pid_position_setpoint_motor2, pid_position_i_motor2, pid_position_error_motor2, motor_steps[MOTOR_LEFT_ID]);
+  calculatePidSpeedSetpoint();
+
+  calculateBodySpeed();
+  //calculatePidSpeed();
+  pid_speed_output_motor1 = calculatePidSpeed(pid_speed_setpoint_motor1, pid_speed_i_motor1, pid_speed_error_motor1);
+  pid_speed_output_motor2 = calculatePidSpeed(pid_speed_setpoint_motor2, pid_speed_i_motor2, pid_speed_error_motor2);
+
+  calculatePidAngleSetpoint();
+  //calculatePidAngle();
+  pid_angle_output_motor1 = calculatePidAngle(pid_angle_setpoint_motor1, pid_angle_i_motor1, pid_angle_error_motor1);
+  pid_angle_output_motor2 = calculatePidAngle(pid_angle_setpoint_motor2, pid_angle_i_motor2, pid_angle_error_motor2);
+  }
+  //Serial.println(micros()-timex);
+
+  //int stepCount = calculateStepCount();  
+  int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, stepTimeMicros_motor1, last_motor_step[MOTOR_LEFT_ID]);
+  
+  stepMotor(MOTOR_LEFT_ID, ensureRange(stepCount_motor1,-MICROSTEPPING,MICROSTEPPING));
+  int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, stepTimeMicros_motor2, last_motor_step[MOTOR_RIGHT_ID]);
+  stepMotor(MOTOR_RIGHT_ID, ensureRange(stepCount_motor2,-MICROSTEPPING,MICROSTEPPING));
+}
+
+unsigned long time_rampup_start_millis;
+
+void serialRead() {
+  if (Serial.available() > 0) {
+    Serial.setTimeout(50); // we don't want to wait for the usual 1 second timeout as the bot would tipover
+    delay(5);
+    pid_position_setpoint_motor1 = Serial.parseInt();
+    delay(5);
+    pid_position_setpoint_motor2 = Serial.parseInt();
+    delay(5);
+    while (Serial.available() > 0) {
+      volatile char character = Serial.read(); // clear buffer of remaining characters
+    }
+    Serial.print("understood: ");
+    Serial.print(pid_position_setpoint_motor1);
+    Serial.print(" ");
+    Serial.println(pid_position_setpoint_motor2);
+
+    time_rampup_start_millis = millis();
+  }
+}
+
+void playTone() {
+  // not implemented yet
 }
 
 void calculatePitch() {
-    // calulate time between two accel/gyro datasets
-    unsigned long micros2 = micros();
-    pitchCalculation_delta_t = micros2 - lastPitchCalculationTime;
-    lastPitchCalculationTime = micros2;
-    
-    float squaresum = ay*ay+az*az;
-    float delta_t_seconds = (float)pitchCalculation_delta_t*0.000001;
-    pitchChange = gz*delta_t_seconds;
-    pitch += pitchChange;
-    pitchAcc = atan(ax/sqrt(squaresum))*RAD_TO_DEG;
-    
-    // use complementary filter to get accurate pitch fast and without drift
-    pitch = COMPLEMENTARY_FILTER_GYRO_COEFFICIENT*pitch + (1.0-COMPLEMENTARY_FILTER_GYRO_COEFFICIENT)*pitchAcc;
+  // calulate time between two accel/gyro datasets
+  unsigned long micros2 = micros();
+  pitchCalculation_delta_t = micros2 - lastPitchCalculationTime;
+  lastPitchCalculationTime = micros2;
+
+  float squaresum = ay * ay + az * az;
+  float delta_t_seconds = (float)pitchCalculation_delta_t * 0.000001;
+  pitchChange = gz * delta_t_seconds;
+  pitch += pitchChange;
+  pitchAcc = atan(ax / sqrt(squaresum)) * RAD_TO_DEG;
+
+  // use complementary filter to get accurate pitch fast and without drift
+  pitch = COMPLEMENTARY_FILTER_GYRO_COEFFICIENT * pitch + (1.0 - COMPLEMENTARY_FILTER_GYRO_COEFFICIENT) * pitchAcc;
 }
-  
-float calculatePidAngle(float& pid_angle_setpoint, float& pid_angle_i, float& pid_angle_error){
+
+float calculatePidAngle(float& pid_angle_setpoint, float& pid_angle_i, float& pid_angle_error) {
   float lastError = pid_angle_error;
   pid_angle_error = pitch - pid_angle_setpoint;
   float error_change = pid_angle_error - lastError;
-  float timeFactor = pitchCalculation_delta_t * 0.0001;
+  float timeFactor = pitchCalculation_delta_t * 0.001 * 0.1;
 
   // integrate error, but limit it to a reasonable value
   float pid_i_change = PID_ANGLE_I_GAIN * pid_angle_error * timeFactor;
-  pid_angle_i = ensureRange(pid_angle_i+pid_i_change,-PID_ANGLE_I_MAX,PID_ANGLE_I_MAX);
+  pid_angle_i = ensureRange(pid_angle_i + pid_i_change, -PID_ANGLE_I_MAX, PID_ANGLE_I_MAX);
 
   float pid_d = PID_ANGLE_D_GAIN * error_change * timeFactor;
-  pid_d = ensureRange(pid_d,-PID_ANGLE_D_MAX,PID_ANGLE_D_MAX);
-  
+  pid_d = ensureRange(pid_d, -PID_ANGLE_D_MAX, PID_ANGLE_D_MAX);
+
   float pid = PID_ANGLE_P_GAIN * pid_angle_error + pid_angle_i + pid_d;
 
-  return ensureRange(pid,-PID_ANGLE_MAX,PID_ANGLE_MAX);
+  return ensureRange(pid, -PID_ANGLE_MAX, PID_ANGLE_MAX);
 }
 
-void calculateBodySpeed(){
-  float delta_t_seconds = pitchCalculation_delta_t*0.001;
-  float factor = pitchChange*STEPS_PER_DEGREE;
-  float bodyStepsPerSecond = (stepsPerSecond_motor1+stepsPerSecond_motor2)/2-factor*gz;
-  bodySpeed = bodySpeed*(1-BODY_SPEED_COEFFICIENT)+bodyStepsPerSecond*BODY_SPEED_COEFFICIENT;
+void calculateBodySpeed() {
+  float delta_t_seconds = pitchCalculation_delta_t * 0.001 * 0.1;
+  float factor = pitchChange * STEPS_PER_DEGREE;
+  float bodyStepsPerSecond = (stepsPerSecond_motor1+stepsPerSecond_motor2)/2.0 - factor * gz;
+  bodySpeed = bodySpeed * (1 - BODY_SPEED_COEFFICIENT) + bodyStepsPerSecond * BODY_SPEED_COEFFICIENT;
   //Serial.println((String)stepsPerSecond + " " + (String)(factor*gz));
 }
 
-float calculatePidSpeed(float& pid_speed_setpoint, float& pid_speed_i, float& pid_speed_error){
+float calculatePidSpeed(float& pid_speed_setpoint, float& pid_speed_i, float& pid_speed_error) {
   float lastError = pid_speed_error;
   pid_speed_error = bodySpeed - pid_speed_setpoint;
   float error_change = pid_speed_error - lastError;
-  float timeFactor = pitchCalculation_delta_t * 0.0001;
+  float timeFactor = pitchCalculation_delta_t * 0.001;
 
   // integrate error, but limit it to a reasonable value
   float pid_i_change = PID_SPEED_I_GAIN * pid_speed_error * timeFactor;
-  pid_speed_i = ensureRange(pid_speed_i+pid_i_change,-PID_SPEED_I_MAX,PID_SPEED_I_MAX);
+  pid_speed_i = ensureRange(pid_speed_i + pid_i_change, -PID_SPEED_I_MAX, PID_SPEED_I_MAX);
 
   float pid_d = PID_SPEED_D_GAIN * error_change * timeFactor;
-  pid_d = ensureRange(pid_d,-PID_SPEED_D_MAX,PID_SPEED_D_MAX);
-  
-  float pid = PID_SPEED_MAX/MAX_STEPS_PER_SECOND*0.1*(PID_SPEED_P_GAIN * pid_speed_error + pid_speed_i + pid_d);
-  
-  return ensureRange(pid,-PID_SPEED_MAX,PID_SPEED_MAX);
+  pid_d = ensureRange(pid_d, -PID_SPEED_D_MAX, PID_SPEED_D_MAX);
+
+  float pid = PID_SPEED_MAX / MAX_STEPS_PER_SECOND * 0.1 * (PID_SPEED_P_GAIN * pid_speed_error + pid_speed_i + pid_d);
+
+  return ensureRange(pid, -PID_SPEED_MAX, PID_SPEED_MAX);
 }
 
-void calculatePidAngleSetpoint(){
-  pid_angle_setpoint_motor1 = INITIAL_TARGET_ANGLE + pid_speed_output_motor1*(0.8/PID_SPEED_MAX*TIPOVER_ANGLE_OFFSET);
-  pid_angle_setpoint_motor2 = INITIAL_TARGET_ANGLE + pid_speed_output_motor2*(0.8/PID_SPEED_MAX*TIPOVER_ANGLE_OFFSET);
+void calculatePidAngleSetpoint() {
+  pid_angle_setpoint_motor1 = INITIAL_TARGET_ANGLE + pid_speed_output_motor1 * (0.8 / PID_SPEED_MAX * TIPOVER_ANGLE_OFFSET);
+  pid_angle_setpoint_motor2 = INITIAL_TARGET_ANGLE + pid_speed_output_motor2 * (0.8 / PID_SPEED_MAX * TIPOVER_ANGLE_OFFSET);
 }
 
-float calculatePidPosition(float& pid_position_setpoint, float& pid_position_i, float& pid_position_error, long& motor_steps){
+float calculatePidPosition(float& pid_position_setpoint, float& pid_position_i, float& pid_position_error, long& motor_steps) {
   float lastError = pid_position_error;
   pid_position_error = motor_steps - pid_position_setpoint;
   float error_change = pid_position_error - lastError;
-  float timeFactor = pitchCalculation_delta_t * 0.0001;
+  float timeFactor = pitchCalculation_delta_t * 0.001 * 0.1;
 
   // integrate error, but limit it to a reasonable value
   float pid_i_change = PID_POSITION_I_GAIN * pid_position_error * timeFactor;
-  pid_position_i = ensureRange(pid_position_i+pid_i_change,-PID_POSITION_I_MAX,PID_POSITION_I_MAX);
+  pid_position_i = ensureRange(pid_position_i + pid_i_change, -PID_POSITION_I_MAX, PID_POSITION_I_MAX);
 
   float pid_d = PID_POSITION_D_GAIN * error_change * timeFactor;
-  pid_d = ensureRange(pid_d,-PID_POSITION_D_MAX,PID_POSITION_D_MAX);
-  
-  float pid = PID_POSITION_MAX/MAX_STEPS_PER_SECOND*0.5*(PID_POSITION_P_GAIN * pid_position_error + pid_position_i + pid_d);
-  
-  return ensureRange(pid,-PID_POSITION_MAX,PID_POSITION_MAX);
+  pid_d = ensureRange(pid_d, -PID_POSITION_D_MAX, PID_POSITION_D_MAX);
+
+  float pid = PID_POSITION_MAX / MAX_STEPS_PER_SECOND * 0.5 * (PID_POSITION_P_GAIN * pid_position_error + pid_position_i + pid_d);
+
+  return ensureRange(pid, -PID_POSITION_MAX, PID_POSITION_MAX);
 }
 
-void calculatePidSpeedSetpoint(){
+void calculatePidSpeedSetpoint() {
   //pid_speed_setpoint = 0.0 + pid_position_output/PID_POSITION_MAX*MAX_STEPS_PER_SECOND*0.25;
+
+  float rampup_factor = 1.0;
+  unsigned long currentTime = millis();
+  if (time_rampup_start_millis + SPEED_TO_POS_RAMPUP_MILLIS > currentTime) {
+    rampup_factor = (currentTime - time_rampup_start_millis) / SPEED_TO_POS_RAMPUP_MILLIS;
+  }
+
+  pid_speed_setpoint_motor1 = 0.0 + pid_position_output_motor1 / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR * rampup_factor;
+  pid_speed_setpoint_motor2 = 0.0 + pid_position_output_motor2 / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR * rampup_factor;
+}
+
+int calculateStepCount(float& pid_angle_output, float& stepsPerSecond, float& partialSteps, float& stepTimeMicros, long lastMotorStep) {
+  float steps = howManySteps(pid_angle_output, stepsPerSecond, partialSteps, stepTimeMicros, lastMotorStep);
+  int stepCount = (int)steps;  
+  partialSteps = steps - stepCount;
   
-  pid_speed_setpoint_motor1 = 0.0 + pid_position_output_motor1/PID_POSITION_MAX*MAX_STEPS_PER_SECOND*0.25;
-  pid_speed_setpoint_motor2 = 0.0 + pid_position_output_motor2/PID_POSITION_MAX*MAX_STEPS_PER_SECOND*0.25;
-  //Serial.println(pid_speed_setpoint);
+  return stepCount;
 }
 
-int calculateStepCount(float& pid_angle_output, float& stepsPerSecond, float& partialSteps, float& stepTimeMicros){  
-    float steps = howManySteps(pid_angle_output, stepsPerSecond, partialSteps, stepTimeMicros);
-    int stepCount = (int)steps;
-    partialSteps = steps - stepCount;
-
-    return stepCount;
-}
-
-float howManySteps(float& pid_angle_output, float& stepsPerSecond, float& partialSteps, float& stepTimeMicros){
+float howManySteps(float& pid_angle_output, float& stepsPerSecond, float& partialSteps, float& stepTimeMicros, long lastMotorStep) {
   unsigned long currentTime = micros();
-  float factor = (float)pid_angle_output/PID_ANGLE_MAX;
+  float factor = (float)pid_angle_output / PID_ANGLE_MAX;
   float lastStepsPerSecond = stepsPerSecond;
   stepsPerSecond = -factor * (float)MAX_STEPS_PER_SECOND;
 
-  stepsPerSecond = ensureRange(stepsPerSecond, lastStepsPerSecond-MAX_ACCELLERATION, lastStepsPerSecond+MAX_ACCELLERATION);
+  stepsPerSecond = ensureRange(stepsPerSecond, lastStepsPerSecond - MAX_ACCELLERATION, lastStepsPerSecond + MAX_ACCELLERATION);
   stepsPerSecond = ensureRange(stepsPerSecond, -MAX_STEPS_PER_SECOND, MAX_STEPS_PER_SECOND);
-  
-  stepTimeMicros = 1000000.0/stepsPerSecond;
 
-  return (float)(currentTime-last_motor_step[MOTOR_LEFT_ID])/stepTimeMicros + partialSteps;
+  stepTimeMicros = 1000000.0 / stepsPerSecond;
+
+  return (float)(currentTime - lastMotorStep) / stepTimeMicros + partialSteps;
 }
 
-const void stepMotor(const int motorId, const int stepCount){
-    long currentTime = micros();
-    int direction = stepCount >= 0 ? HIGH : LOW;
-    
-    if (last_motor_direction[motorId] != direction){
-      if (direction == LOW){
-        switch (motorId){
-          case 0:  digitalWriteFast(PIN_MOTOR_1_DIRECTION, LOW); break;
-          case 1:  digitalWriteFast(PIN_MOTOR_2_DIRECTION, LOW); break;
-        }
-      } else {
-        switch (motorId){
-          case 0:  digitalWriteFast(PIN_MOTOR_1_DIRECTION, HIGH); break;
-          case 1:  digitalWriteFast(PIN_MOTOR_2_DIRECTION, HIGH); break;
-        }
-      }
-      last_motor_direction[motorId] = direction;
-      delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
-    }
+const void stepMotor(const int motorId, const int stepCount) {
+  int direction = stepCount >= 0 ? HIGH : LOW;
 
-    for (int i = 0; i < abs(stepCount); i++){
-      delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
-      switch (motorId){
-        case 0:  digitalWriteFast(PIN_MOTOR_1_STEP, LOW); break;
-        case 1:  digitalWriteFast(PIN_MOTOR_2_STEP, LOW); break;
+  if (last_motor_direction[motorId] != direction) {
+    if (direction == LOW) {
+      switch (motorId) {
+        case 0:  digitalWriteFast(PIN_MOTOR_1_DIRECTION, LOW); break;
+        case 1:  digitalWriteFast(PIN_MOTOR_2_DIRECTION, LOW); break;
       }
-      delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
-      switch (motorId){
-        case 0:  digitalWriteFast(PIN_MOTOR_1_STEP, HIGH); break;
-        case 1:  digitalWriteFast(PIN_MOTOR_2_STEP, HIGH); break;
+    } else {
+      switch (motorId) {
+        case 0:  digitalWriteFast(PIN_MOTOR_1_DIRECTION, HIGH); break;
+        case 1:  digitalWriteFast(PIN_MOTOR_2_DIRECTION, HIGH); break;
       }
     }
-    
-    last_motor_step_interval[motorId] = currentTime-last_motor_step[motorId];
-    last_motor_step[motorId] = currentTime;
-    motor_steps[motorId] += stepCount;
+    last_motor_direction[motorId] = direction;
+    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+  }
+
+  for (int i = 0; i < abs(stepCount); i++) {
+    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+    switch (motorId) {
+      case 0:  digitalWriteFast(PIN_MOTOR_1_STEP, LOW); break;
+      case 1:  digitalWriteFast(PIN_MOTOR_2_STEP, LOW); break;
+    }
+    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+    switch (motorId) {
+      case 0:  digitalWriteFast(PIN_MOTOR_1_STEP, HIGH); break;
+      case 1:  digitalWriteFast(PIN_MOTOR_2_STEP, HIGH); break;
+    }
+  }
+
+  long currentTime = micros();
+  last_motor_step_interval[motorId] = currentTime - last_motor_step[motorId];
+  last_motor_step[motorId] = currentTime;
+  motor_steps[motorId] += stepCount;
 }
 
 //-------------------------------------------------------------------------
 //--------------------------- helper methos -------------------------------
 //-------------------------------------------------------------------------
 
-int sign(float value){
-  if (value > 0){
+int sign(float value) {
+  if (value > 0) {
     return 1;
-  } else if (value < 0){
+  } else if (value < 0) {
     return -1;
   } else {
     return 0;
   }
 }
 
-float ensureRange(float value, float val1, float val2){
+float ensureRange(float value, float val1, float val2) {
   float min = val1 < val2 ? val1 : val2;
   float max = val1 >= val2 ? val1 : val2;
-  if (value < min){
+  if (value < min) {
     return min;
-  } else if (value > max){
+  } else if (value > max) {
     return max;
   }
   return value;
 }
 
 // Check to see if we are recovering from a reset event and clear the error register
-void readAndInitErrorRegister(){
+void readAndInitErrorRegister() {
   boolean mcusrMessageFound = false;
-  if(MCUSR & WDRF) {
+  if (MCUSR & WDRF) {
     Serial.println("Rebooting from a Watchdog Reset.\n");
-    mcusrMessageFound=true;
+    mcusrMessageFound = true;
   }
-  if(MCUSR & BORF) {
+  if (MCUSR & BORF) {
     Serial.println("Rebooting from a Brown-out Reset.\n");
-    mcusrMessageFound=true;
+    mcusrMessageFound = true;
   }
-  if(MCUSR & EXTRF) {
+  if (MCUSR & EXTRF) {
     Serial.println("Rebooting from an External Reset.\n");
-    mcusrMessageFound=true;
+    mcusrMessageFound = true;
   }
-  if(MCUSR & PORF) {
+  if (MCUSR & PORF) {
     Serial.println("Rebooting from a Power Reset.\n");
-    mcusrMessageFound=true;
+    mcusrMessageFound = true;
   }
 
-  if (!mcusrMessageFound){
-    if (MCUSR == 0x00){
+  if (!mcusrMessageFound) {
+    if (MCUSR == 0x00) {
       Serial.println("Rebooting with emtpy MCUSR register");
     } else {
       Serial.println("Rebooting from an unknown reason : " + MCUSR);
@@ -491,7 +516,7 @@ void readAndInitErrorRegister(){
   }
 
   // Clear register
-  MCUSR = 0x00;  
+  MCUSR = 0x00;
 }
 
 
@@ -506,9 +531,9 @@ const int I2C_ADDRESS_MAGNETOMETER = 0x0C;
 const float ACCERELOMETER_G_CONFIG = 2.0;
 const float GYRO_DEG_PER_SECOND_CONFIG = 250.0;
 
-const float GYRO_RANGE_FACTOR = GYRO_DEG_PER_SECOND_CONFIG/32768.0;
-const float ACCEL_RANGE_FACTOR = ACCERELOMETER_G_CONFIG/32768.0;
-const float COMPASS_RANGE_FACTOR = 4800.0/32768.0;
+const float GYRO_RANGE_FACTOR = GYRO_DEG_PER_SECOND_CONFIG / 32768.0;
+const float ACCEL_RANGE_FACTOR = ACCERELOMETER_G_CONFIG / 32768.0;
+const float COMPASS_RANGE_FACTOR = 4800.0 / 32768.0;
 
 void setupMPU9250() {
   // init I2C bus
@@ -532,12 +557,12 @@ void setupMPU9250() {
   // disable MPU9250 sleep-mode
   I2Cdev::writeBit(I2C_ADDRESS_GYRO, 0x6B, 6, false);
 
-  
+
   delay(500);
   Serial.println("done!");
 }
 
-void getAccelGyroData(void){
+void getAccelGyroData(void) {
   uint8_t buffer[14];
   I2Cdev::readBytes(I2C_ADDRESS_GYRO, 0x3B, 14, buffer);
   ax = ((((int16_t)buffer[0]) << 8) | buffer[1]) * ACCEL_RANGE_FACTOR;
@@ -549,11 +574,11 @@ void getAccelGyroData(void){
   gz = ((((int16_t)buffer[12]) << 8) | buffer[13]) * GYRO_RANGE_FACTOR;
 }
 
-void getCompassData(void){
+void getCompassData(void) {
   uint8_t buffer[6];
   I2Cdev::readBytes(0x0C, 0x03, 6, buffer);
-  
+
   mx = (((int16_t)(buffer[1]) << 8) | buffer[0]) * COMPASS_RANGE_FACTOR;
   my = (((int16_t)(buffer[3]) << 8) | buffer[2]) * COMPASS_RANGE_FACTOR;
-  mz = (((int16_t)(buffer[5]) << 8) | buffer[4]) * COMPASS_RANGE_FACTOR; 
+  mz = (((int16_t)(buffer[5]) << 8) | buffer[4]) * COMPASS_RANGE_FACTOR;
 }
