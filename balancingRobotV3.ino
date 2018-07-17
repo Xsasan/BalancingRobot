@@ -5,7 +5,7 @@
 // --------------------- START custom settings ---------------------
 const float INITIAL_TARGET_ANGLE = 2.0;
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
-const float MAX_FULL_STEPS_PER_SECOND = 900;
+const float MAX_FULL_STEPS_PER_SECOND = 1200;
 const float MAX_ACCELLERATION = 250.0;
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.9992; // how much to use gyro value compared to acceleratometer value
 
@@ -22,7 +22,7 @@ const float PID_ANGLE_I_MAX = 20;
 const float PID_ANGLE_D_MAX = 20;
 
 const float PID_SPEED_MAX = 100;
-const float PID_SPEED_P_GAIN = 12;
+const float PID_SPEED_P_GAIN = 9;
 const float PID_SPEED_I_GAIN = 0.0;
 const float PID_SPEED_D_GAIN = 0;
 const float PID_SPEED_I_MAX = 100000;
@@ -181,8 +181,9 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
 
   // initialize stepper by doing one step
-  stepMotor(MOTOR_LEFT_ID, 1);
-  stepMotor(MOTOR_RIGHT_ID, 1);
+  long timex = micros();
+  stepMotors(MICROSTEPPING, MICROSTEPPING);
+  Serial.println(micros()-timex);
 
   setupMPU9250();
 
@@ -276,29 +277,16 @@ void loop() {
   }
   //Serial.println(micros()-timex);
 
-  //int stepCount = calculateStepCount();  
+  long timey = micros();
   int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, stepTimeMicros_motor1, last_motor_step[MOTOR_LEFT_ID]);
-  int stepCount_motor1_limited = ensureRange(stepCount_motor1,MICROSTEPPING,-MICROSTEPPING);
-  stepMotor(MOTOR_LEFT_ID, stepCount_motor1_limited);
+  // "+(micros()-timey)" corrects for calculation time
+  int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, stepTimeMicros_motor2, last_motor_step[MOTOR_RIGHT_ID]+(micros()-timey));
   
-  int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, stepTimeMicros_motor2, last_motor_step[MOTOR_RIGHT_ID]);
-  int stepCount_motor2_limited = ensureRange(stepCount_motor2,MICROSTEPPING,-MICROSTEPPING);
-  stepMotor(MOTOR_RIGHT_ID, stepCount_motor2_limited);
+  if (stepCount_motor1 > 2*MICROSTEPPING || stepCount_motor2 > 2*MICROSTEPPING){    
+    //tone(PIN_BUZZER, 500, 1000);
+  }  
 
-  // do additional steps if necessary and use delays so motor does not skip steps
-  /*stepCount_motor1 -= stepCount_motor1_limited;
-  stepCount_motor2 -= stepCount_motor2_limited;
-  while (stepCount_motor1 > 0 || stepCount_motor2 > 0){
-    delayMicroseconds(20);
-    if (stepCount_motor1 > 0){
-      stepMotor(MOTOR_LEFT_ID, 1);
-      stepCount_motor1--;
-    }
-    if (stepCount_motor2 > 0){
-      stepMotor(MOTOR_RIGHT_ID, 1);
-      stepCount_motor2--;
-    }
-  }*/
+  stepMotors(stepCount_motor1,stepCount_motor2);
 }
 
 unsigned long time_rampup_start_millis;
@@ -349,7 +337,7 @@ void serialReadDirection() {
      target_pid_speed_setpoint_motor1 *= 1.8 * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
      target_pid_speed_setpoint_motor2 *= 1.8 * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
   } else {
-    if (millis() - lastDirectionInput > 5000){
+    if (millis() - lastDirectionInput > 2000){
       stopSpeedRemoteControl();
     }
   }
@@ -520,7 +508,7 @@ float howManySteps(float& pid_angle_output, float& stepsPerSecond, float& partia
   return (float)(currentTime - lastMotorStep) / stepTimeMicros + partialSteps;
 }
 
-const void stepMotor(const int motorId, const int stepCount) {
+/*const void stepMotor(const int motorId, const int stepCount) {
   int direction = stepCount >= 0 ? HIGH : LOW;
 
   if (last_motor_direction[motorId] != direction) {
@@ -552,10 +540,64 @@ const void stepMotor(const int motorId, const int stepCount) {
     }
   }
 
+  //long currentTime = micros();
+  //last_motor_step_interval[motorId] = currentTime - last_motor_step[motorId];
+  //last_motor_step[motorId] = currentTime;
+  //motor_steps[motorId] += stepCount;
+}*/
+
+// Beware: digitalWriteFast needs hardcoded constants to work! So all combinations be hardcoded like this
+const void stepMotors(int stepsMotor1, int stepsMotor2){
+  int directionMotor1 = stepsMotor1 >= 0 ? HIGH : LOW;
+  int directionMotor2 = stepsMotor2 >= 0 ? HIGH : LOW;
+
+  if (last_motor_direction[MOTOR_LEFT_ID] != directionMotor1) {
+    if (directionMotor1 == LOW) {
+        digitalWriteFast(PIN_MOTOR_1_DIRECTION, LOW);
+    } else {
+        digitalWriteFast(PIN_MOTOR_1_DIRECTION, HIGH);
+    }
+    last_motor_direction[MOTOR_LEFT_ID] = directionMotor1;
+    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+  }
+  if (last_motor_direction[MOTOR_RIGHT_ID] != directionMotor2) {
+    if (directionMotor2 == LOW) {
+        digitalWriteFast(PIN_MOTOR_2_DIRECTION, LOW);
+    } else {
+        digitalWriteFast(PIN_MOTOR_2_DIRECTION, HIGH);
+    }
+    last_motor_direction[MOTOR_RIGHT_ID] = directionMotor2;
+    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+  }
+
+  int counterMaximum = max(abs(stepsMotor1),abs(stepsMotor2));
+  for (int i = 0; i < counterMaximum; i++) {
+    if (i < abs(stepsMotor1)){
+      digitalWriteFast(PIN_MOTOR_1_STEP, LOW);
+    }
+    if (i < abs(stepsMotor2)){
+      digitalWriteFast(PIN_MOTOR_2_STEP, LOW);
+    }
+    
+    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+    
+    if (i < abs(stepsMotor1)){
+      digitalWriteFast(PIN_MOTOR_1_STEP, HIGH);
+    }
+    if (i < abs(stepsMotor2)){
+      digitalWriteFast(PIN_MOTOR_2_STEP, HIGH);
+    }
+    
+    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+  }
+
   long currentTime = micros();
-  last_motor_step_interval[motorId] = currentTime - last_motor_step[motorId];
-  last_motor_step[motorId] = currentTime;
-  motor_steps[motorId] += stepCount;
+  last_motor_step_interval[MOTOR_LEFT_ID] = currentTime - last_motor_step[MOTOR_LEFT_ID];
+  last_motor_step_interval[MOTOR_RIGHT_ID] = currentTime - last_motor_step[MOTOR_RIGHT_ID];
+  last_motor_step[MOTOR_LEFT_ID] = currentTime;
+  last_motor_step[MOTOR_RIGHT_ID] = currentTime;
+  motor_steps[MOTOR_LEFT_ID] += stepsMotor1;
+  motor_steps[MOTOR_RIGHT_ID] += stepsMotor2;
 }
 
 //-------------------------------------------------------------------------
