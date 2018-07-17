@@ -9,8 +9,8 @@ const float MAX_FULL_STEPS_PER_SECOND = 900;
 const float MAX_ACCELLERATION = 250.0;
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.9992; // how much to use gyro value compared to acceleratometer value
 
-const float MAX_BODY_SPEED_FACTOR = 0.25;
-const float SPEED_TO_POS_RAMPUP_MILLIS = 1000;
+const float MAX_BODY_SPEED_FACTOR = 0.30;
+const float SPEED_TO_POS_RAMPUP_MILLIS = 0;
 // ---------------------  END custom settings  ---------------------
 
 // --------------------- START PID settings ---------------------
@@ -22,7 +22,7 @@ const float PID_ANGLE_I_MAX = 20;
 const float PID_ANGLE_D_MAX = 20;
 
 const float PID_SPEED_MAX = 100;
-const float PID_SPEED_P_GAIN = 7;
+const float PID_SPEED_P_GAIN = 12;
 const float PID_SPEED_I_GAIN = 0.0;
 const float PID_SPEED_D_GAIN = 0;
 const float PID_SPEED_I_MAX = 100000;
@@ -162,6 +162,9 @@ float melodySpeedSlowdown = 1.1;
 // ------------------------  END music  ------------------------
 
 boolean enable = false;
+const int SPEED_MODE = 1;
+const int POSITION_MODE = 2;
+int mode = POSITION_MODE;
 
 void setup() {
   Serial.begin(57600); // startup serial communication with given baud rate
@@ -217,7 +220,8 @@ void waitForTargetAngle() {
 boolean getAccelGyro = true;
 
 void loop() {
-  serialRead();
+  //serialReadPosition();
+  serialReadDirection();
 
   playTone();
 
@@ -252,37 +256,54 @@ void loop() {
       pid_position_setpoint_motor2 = 0;
       return;
     }
-  } else {
+    } else {
+    if (mode >= POSITION_MODE){
+      //calculatePidPosition();
+      pid_position_output_motor1 = calculatePidPosition(pid_position_setpoint_motor1, pid_position_i_motor1, pid_position_error_motor1, motor_steps[MOTOR_RIGHT_ID]);
+      pid_position_output_motor2 = calculatePidPosition(pid_position_setpoint_motor2, pid_position_i_motor2, pid_position_error_motor2, motor_steps[MOTOR_LEFT_ID]);
+      calculatePidSpeedSetpoint();
+    }
   
-  //calculatePidPosition();
+    calculateBodySpeed();
+    //calculatePidSpeed();
+    pid_speed_output_motor1 = calculatePidSpeed(pid_speed_setpoint_motor1, pid_speed_i_motor1, pid_speed_error_motor1);
+    pid_speed_output_motor2 = calculatePidSpeed(pid_speed_setpoint_motor2, pid_speed_i_motor2, pid_speed_error_motor2);
   
-  pid_position_output_motor1 = calculatePidPosition(pid_position_setpoint_motor1, pid_position_i_motor1, pid_position_error_motor1, motor_steps[MOTOR_RIGHT_ID]);
-  pid_position_output_motor2 = calculatePidPosition(pid_position_setpoint_motor2, pid_position_i_motor2, pid_position_error_motor2, motor_steps[MOTOR_LEFT_ID]);
-  calculatePidSpeedSetpoint();
-
-  calculateBodySpeed();
-  //calculatePidSpeed();
-  pid_speed_output_motor1 = calculatePidSpeed(pid_speed_setpoint_motor1, pid_speed_i_motor1, pid_speed_error_motor1);
-  pid_speed_output_motor2 = calculatePidSpeed(pid_speed_setpoint_motor2, pid_speed_i_motor2, pid_speed_error_motor2);
-
-  calculatePidAngleSetpoint();
-  //calculatePidAngle();
-  pid_angle_output_motor1 = calculatePidAngle(pid_angle_setpoint_motor1, pid_angle_i_motor1, pid_angle_error_motor1);
-  pid_angle_output_motor2 = calculatePidAngle(pid_angle_setpoint_motor2, pid_angle_i_motor2, pid_angle_error_motor2);
+    calculatePidAngleSetpoint();
+    //calculatePidAngle();
+    pid_angle_output_motor1 = calculatePidAngle(pid_angle_setpoint_motor1, pid_angle_i_motor1, pid_angle_error_motor1);
+    pid_angle_output_motor2 = calculatePidAngle(pid_angle_setpoint_motor2, pid_angle_i_motor2, pid_angle_error_motor2);
   }
   //Serial.println(micros()-timex);
 
   //int stepCount = calculateStepCount();  
   int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, stepTimeMicros_motor1, last_motor_step[MOTOR_LEFT_ID]);
+  int stepCount_motor1_limited = ensureRange(stepCount_motor1,MICROSTEPPING,-MICROSTEPPING);
+  stepMotor(MOTOR_LEFT_ID, stepCount_motor1_limited);
   
-  stepMotor(MOTOR_LEFT_ID, ensureRange(stepCount_motor1,-MICROSTEPPING,MICROSTEPPING));
   int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, stepTimeMicros_motor2, last_motor_step[MOTOR_RIGHT_ID]);
-  stepMotor(MOTOR_RIGHT_ID, ensureRange(stepCount_motor2,-MICROSTEPPING,MICROSTEPPING));
+  int stepCount_motor2_limited = ensureRange(stepCount_motor2,MICROSTEPPING,-MICROSTEPPING);
+  stepMotor(MOTOR_RIGHT_ID, stepCount_motor2_limited);
+
+  // do additional steps if necessary and use delays so motor does not skip steps
+  /*stepCount_motor1 -= stepCount_motor1_limited;
+  stepCount_motor2 -= stepCount_motor2_limited;
+  while (stepCount_motor1 > 0 || stepCount_motor2 > 0){
+    delayMicroseconds(20);
+    if (stepCount_motor1 > 0){
+      stepMotor(MOTOR_LEFT_ID, 1);
+      stepCount_motor1--;
+    }
+    if (stepCount_motor2 > 0){
+      stepMotor(MOTOR_RIGHT_ID, 1);
+      stepCount_motor2--;
+    }
+  }*/
 }
 
 unsigned long time_rampup_start_millis;
 
-void serialRead() {
+void serialReadPosition() {
   if (Serial.available() > 0) {
     Serial.setTimeout(50); // we don't want to wait for the usual 1 second timeout as the bot would tipover
     delay(5);
@@ -302,8 +323,83 @@ void serialRead() {
   }
 }
 
+long lastDirectionInput;
+float target_pid_speed_setpoint_motor1;
+float target_pid_speed_setpoint_motor2;
+
+void serialReadDirection() {
+  if (Serial.available() > 0) {
+     lastDirectionInput = millis();
+     mode = SPEED_MODE;
+  
+     char c = Serial.read();
+
+     switch (c){
+      case 'f': target_pid_speed_setpoint_motor1 = 1; target_pid_speed_setpoint_motor2 = 1; break;
+      case 'b': target_pid_speed_setpoint_motor1 = -1; target_pid_speed_setpoint_motor2 = -1; break;
+      case 'l': target_pid_speed_setpoint_motor1 = 0.15; target_pid_speed_setpoint_motor2 = -0.15; break;
+      case 'r': target_pid_speed_setpoint_motor1 = -0.15; target_pid_speed_setpoint_motor2 = 0.15; break;
+      case 'A': target_pid_speed_setpoint_motor1 = 1; target_pid_speed_setpoint_motor2 = 0.75; break;
+      case 'B': target_pid_speed_setpoint_motor1 = 0.75; target_pid_speed_setpoint_motor2 = 1; break;
+      case 'C': target_pid_speed_setpoint_motor1 = -1; target_pid_speed_setpoint_motor2 = -0.75; break;
+      case 'D': target_pid_speed_setpoint_motor1 = -0.75; target_pid_speed_setpoint_motor2 = -1; break;
+      default: stopSpeedRemoteControl(); break;
+     }
+     
+     target_pid_speed_setpoint_motor1 *= 1.8 * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
+     target_pid_speed_setpoint_motor2 *= 1.8 * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
+  } else {
+    if (millis() - lastDirectionInput > 5000){
+      stopSpeedRemoteControl();
+    }
+  }
+
+  if (mode == SPEED_MODE){
+    rampupDirectionControl();
+  }
+}
+
+void rampupDirectionControl(){
+  pid_speed_setpoint_motor1 += (target_pid_speed_setpoint_motor1 - pid_speed_setpoint_motor1)*0.001;
+  pid_speed_setpoint_motor2 += (target_pid_speed_setpoint_motor2 - pid_speed_setpoint_motor2)*0.001;
+
+  if (abs(target_pid_speed_setpoint_motor1 - pid_speed_setpoint_motor1) < 5.0){
+    pid_speed_setpoint_motor1 = target_pid_speed_setpoint_motor1;
+  }
+  
+  if (abs(target_pid_speed_setpoint_motor2 - pid_speed_setpoint_motor2) < 5.0){
+    pid_speed_setpoint_motor2 = target_pid_speed_setpoint_motor2;
+  }
+
+  // speed up synchronizing of motor speeds so bot runs straight
+  if (target_pid_speed_setpoint_motor1 == target_pid_speed_setpoint_motor2){
+    float diff = pid_speed_setpoint_motor1-pid_speed_setpoint_motor2;
+    if (abs(pid_speed_setpoint_motor1-pid_speed_setpoint_motor2) < 5.0){
+      pid_speed_setpoint_motor1 -= diff*0.5;
+      pid_speed_setpoint_motor2 += diff*0.5;
+    }
+    pid_speed_setpoint_motor1 -= diff*0.01;
+    pid_speed_setpoint_motor2 += diff*0.01;
+  }
+}
+
+void stopSpeedRemoteControl(){
+   //mode = POSITION_MODE;
+   target_pid_speed_setpoint_motor1 = 0.00001;
+   target_pid_speed_setpoint_motor2 = 0.00001;
+   
+   //pid_position_setpoint_motor1 = motor_steps[MOTOR_LEFT_ID];
+   //pid_position_setpoint_motor2 = motor_steps[MOTOR_RIGHT_ID];
+}
+
 void playTone() {
-  // not implemented yet
+  /*if (abs(pid_position_error_motor1) > 1500){
+    tone(PIN_BUZZER, abs(pid_position_error_motor1)*0.3);
+  } else {
+    noTone(PIN_BUZZER);
+  }*/
+  
+  //tone(PIN_BUZZER, abs(pid_speed_setpoint_motor1)*30+50,50);
 }
 
 void calculatePitch() {
