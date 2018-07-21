@@ -1,11 +1,12 @@
 #include "I2Cdev.h"
 #include <digitalWriteFast.h>
 #include "notes.h"
+#include "util/delay.h"
 
 // --------------------- START custom settings ---------------------
 const float INITIAL_TARGET_ANGLE = 2.0;
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
-const float MAX_FULL_STEPS_PER_SECOND = 1200;
+const float MAX_FULL_STEPS_PER_SECOND = 900;
 const float MAX_ACCELLERATION = 250.0;
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.9992; // how much to use gyro value compared to acceleratometer value
 
@@ -38,7 +39,7 @@ const float PID_POSITION_D_MAX = 100;
 // --------------------- START hardware settings ---------------------
 const int MOTOR_STEPS_PER_360 = 200;
 const int MICROSTEPPING = 32; // microstepping selected on the driver
-const int MINIMUM_PIN_DELAY_MICROS = 2; // driver specific: how long a pin has to hold the output level to be registered by the driver (1.9us for DRV8834)
+const float MINIMUM_PIN_DELAY_MICROS = 1.9; // driver specific: how long a pin has to hold the output level to be registered by the driver (1.9us for DRV8834)
 // ---------------------  END hardware settings  ---------------------
 
 // --------------------- START wiring settings ---------------------
@@ -70,9 +71,9 @@ float mx, my, mz;
 
 // --------------------- START motor variables ---------------------
 boolean last_motor_direction[2];
-unsigned long last_motor_step[2];
-int last_motor_step_interval[2];
 long motor_steps[2];
+unsigned long last_motor_step_time; // the last time stepMotors() was called
+float motor_step_iteration_interval; // how long between two calls of stepMotors()
 // ---------------------  END motor variables  ---------------------
 
 // --------------------- START pitch calculation variables ---------------------
@@ -93,7 +94,6 @@ float pid_speed_error_motor2;
 // ---------------------  END speed calculation variables  ---------------------
 
 // --------------------- START position calculation variables ---------------------
-//float pid_position_error;
 float pid_position_error_motor1;
 float pid_position_error_motor2;
 unsigned long lastPositionCalculationTime;
@@ -105,8 +105,6 @@ float partialSteps_motor1;
 float partialSteps_motor2;
 float stepsPerSecond_motor1;
 float stepsPerSecond_motor2;
-float stepTimeMicros_motor1;
-float stepTimeMicros_motor2;
 // ---------------------  END step calculation variables  ---------------------
 
 // --------------------- START pid variables ---------------------
@@ -240,9 +238,9 @@ void loop() {
   }
 
   long timey = micros();
-  int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, stepTimeMicros_motor1, last_motor_step[MOTOR_LEFT_ID]);
+  int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, motor_step_iteration_interval);
   // "+(micros()-timey)" corrects for calculation time
-  int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, stepTimeMicros_motor2, last_motor_step[MOTOR_RIGHT_ID]+(micros()-timey));
+  int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, motor_step_iteration_interval);
   
   if (abs(stepCount_motor1) > 2*MICROSTEPPING || abs(stepCount_motor2) > 2*MICROSTEPPING){
     playWarningTone(2000);
@@ -459,16 +457,15 @@ void calculatePidSpeedSetpoint() {
   pid_speed_setpoint_motor2 = 0.0 + pid_position_output_motor2 / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
 }
 
-int calculateStepCount(float& pid_angle_output, float& stepsPerSecond, float& partialSteps, float& stepTimeMicros, long lastMotorStep) {
-  float steps = howManySteps(pid_angle_output, stepsPerSecond, partialSteps, stepTimeMicros, lastMotorStep);
+int calculateStepCount(float& pid_angle_output, float& stepsPerSecond, float& partialSteps, long motor_step_iteration_interval) {
+  float steps = howManySteps(pid_angle_output, stepsPerSecond, partialSteps, motor_step_iteration_interval);
   int stepCount = (int)steps;  
   partialSteps = steps - stepCount;
-  
+
   return stepCount;
 }
 
-float howManySteps(float& pid_angle_output, float& stepsPerSecond, float& partialSteps, float& stepTimeMicros, long lastMotorStep) {
-  unsigned long currentTime = micros();
+float howManySteps(float& pid_angle_output, float& stepsPerSecond, float& partialSteps, long motor_step_iteration_interval) {
   float factor = (float)pid_angle_output / PID_ANGLE_MAX;
   float lastStepsPerSecond = stepsPerSecond;
   stepsPerSecond = -factor * (float)MAX_STEPS_PER_SECOND;
@@ -476,13 +473,11 @@ float howManySteps(float& pid_angle_output, float& stepsPerSecond, float& partia
   stepsPerSecond = ensureRange(stepsPerSecond, lastStepsPerSecond - MAX_ACCELLERATION, lastStepsPerSecond + MAX_ACCELLERATION);
   stepsPerSecond = ensureRange(stepsPerSecond, -MAX_STEPS_PER_SECOND, MAX_STEPS_PER_SECOND);
 
-  stepTimeMicros = 1000000.0 / stepsPerSecond;
-
-  return (float)(currentTime - lastMotorStep) / stepTimeMicros + partialSteps;
+  return (motor_step_iteration_interval * (stepsPerSecond * 0.000001)) + partialSteps;
 }
 
 // Beware: digitalWriteFast needs hardcoded constants to work! So all combinations be hardcoded like this
-const void stepMotors(int stepsMotor1, int stepsMotor2){
+const void stepMotors(int stepsMotor1, int stepsMotor2){  
   int directionMotor1 = stepsMotor1 >= 0 ? HIGH : LOW;
   int directionMotor2 = stepsMotor2 >= 0 ? HIGH : LOW;
 
@@ -493,7 +488,7 @@ const void stepMotors(int stepsMotor1, int stepsMotor2){
         digitalWriteFast(PIN_MOTOR_1_DIRECTION, HIGH);
     }
     last_motor_direction[MOTOR_LEFT_ID] = directionMotor1;
-    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+    _delay_us(MINIMUM_PIN_DELAY_MICROS);
   }
   if (last_motor_direction[MOTOR_RIGHT_ID] != directionMotor2) {
     if (directionMotor2 == LOW) {
@@ -502,7 +497,7 @@ const void stepMotors(int stepsMotor1, int stepsMotor2){
         digitalWriteFast(PIN_MOTOR_2_DIRECTION, HIGH);
     }
     last_motor_direction[MOTOR_RIGHT_ID] = directionMotor2;
-    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+    _delay_us(MINIMUM_PIN_DELAY_MICROS);
   }
 
   int counterMaximum = max(abs(stepsMotor1),abs(stepsMotor2));
@@ -514,7 +509,7 @@ const void stepMotors(int stepsMotor1, int stepsMotor2){
       digitalWriteFast(PIN_MOTOR_2_STEP, LOW);
     }
     
-    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+    _delay_us(MINIMUM_PIN_DELAY_MICROS);
     
     if (i < abs(stepsMotor1)){
       digitalWriteFast(PIN_MOTOR_1_STEP, HIGH);
@@ -523,14 +518,16 @@ const void stepMotors(int stepsMotor1, int stepsMotor2){
       digitalWriteFast(PIN_MOTOR_2_STEP, HIGH);
     }
     
-    delayMicroseconds(MINIMUM_PIN_DELAY_MICROS);
+    _delay_us(MINIMUM_PIN_DELAY_MICROS);
   }
 
   long currentTime = micros();
-  last_motor_step_interval[MOTOR_LEFT_ID] = currentTime - last_motor_step[MOTOR_LEFT_ID];
-  last_motor_step_interval[MOTOR_RIGHT_ID] = currentTime - last_motor_step[MOTOR_RIGHT_ID];
-  last_motor_step[MOTOR_LEFT_ID] = currentTime;
-  last_motor_step[MOTOR_RIGHT_ID] = currentTime;
+  if (currentTime - last_motor_step_time > 10000 || motor_step_iteration_interval == 0){
+    motor_step_iteration_interval = 1000; // just a guess
+  } else {
+    motor_step_iteration_interval = motor_step_iteration_interval * 0.98 + (currentTime-last_motor_step_time) * 0.02; // smooth/average the iteration time
+  }
+  last_motor_step_time = currentTime;
   motor_steps[MOTOR_LEFT_ID] += stepsMotor1;
   motor_steps[MOTOR_RIGHT_ID] += stepsMotor2;
 }
