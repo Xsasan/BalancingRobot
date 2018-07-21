@@ -22,7 +22,7 @@ const float PID_ANGLE_I_MAX = 20;
 const float PID_ANGLE_D_MAX = 20;
 
 const float PID_SPEED_MAX = 100;
-const float PID_SPEED_P_GAIN = 9;
+const float PID_SPEED_P_GAIN = 12;
 const float PID_SPEED_I_GAIN = 0.0;
 const float PID_SPEED_D_GAIN = 0;
 const float PID_SPEED_I_MAX = 100000;
