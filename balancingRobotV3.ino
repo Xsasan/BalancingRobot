@@ -8,6 +8,7 @@ const float INITIAL_TARGET_ANGLE = 2.0;
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
 const float MAX_FULL_STEPS_PER_SECOND = 900;
 const float MAX_ACCELLERATION = 250.0;
+const float MAX_ACCELLERATION_UNTIL_FULL_STEPS_PER_SECOND = 450;
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.9992; // how much to use gyro value compared to accerelometer value
 
 const float MAX_BODY_SPEED_FACTOR = 0.4;
@@ -22,7 +23,7 @@ const float PID_ANGLE_I_MAX = 20;
 const float PID_ANGLE_D_MAX = 20;
 
 const float PID_SPEED_MAX = 100;
-const float PID_SPEED_P_GAIN = 13;
+const float PID_SPEED_P_GAIN = 11.5;
 const float PID_SPEED_I_GAIN = 0.05;
 const float PID_SPEED_D_GAIN = 0;
 const float PID_SPEED_I_MAX = 20;
@@ -40,6 +41,7 @@ const float PID_POSITION_D_MAX = 20;
 const int MOTOR_STEPS_PER_360 = 200;
 const int MICROSTEPPING = 32; // microstepping selected on the driver
 const float MINIMUM_PIN_DELAY_MICROS = 1.9; // driver specific: how long a pin has to hold the output level to be registered by the driver (1.9us for DRV8834)
+const float POWER_LIMIT_SETTLE_TIME_MICROS = 200; // how long it takes until changes on power limit take effect
 // ---------------------  END hardware settings  ---------------------
 
 // --------------------- START wiring settings ---------------------
@@ -49,6 +51,8 @@ const int PIN_MOTOR_1_DIRECTION = 10;
 const int PIN_MOTOR_2_DIRECTION = 9;
 
 const int PIN_BUZZER = 3;
+
+const int PIN_POWER_LIMIT = 6;
 // ---------------------  END wiring settings  ---------------------
 
 // --------------------- START calculated constants ---------------------
@@ -74,6 +78,9 @@ boolean last_motor_direction[2];
 long motor_steps[2];
 unsigned long last_motor_step_time; // the last time stepMotors() was called
 float motor_step_iteration_interval; // how long between two calls of stepMotors()
+
+const int POWER_LIMIT_STARTUP_VALUE = 255;
+int powerLimit = 0; // 0-255 where 255 = maximum power (about 0.6A depending on setting of potentiometer on DRV8834)
 // ---------------------  END motor variables  ---------------------
 
 // --------------------- START pitch calculation variables ---------------------
@@ -160,13 +167,19 @@ void setup() {
   pinMode(PIN_MOTOR_1_DIRECTION, OUTPUT);
   pinMode(PIN_MOTOR_2_DIRECTION, OUTPUT);
 
-  // set buzzer pin to output mode
+  // set buzzer and power limit pin to output mode
   pinMode(PIN_BUZZER, OUTPUT);
+  pinMode(PIN_POWER_LIMIT, OUTPUT);
+
+  // set PWM on Pins 9 and 10 to 31250 Hz instead of default 488 Hz
+  // for better reaction of power target (only works when power target is controlled with one of these pins)
+  TCCR1B = TCCR1B & 0b11111000 | 0x01;
+  
+  setPowerLimit();
+  _delay_us(POWER_LIMIT_SETTLE_TIME_MICROS); // wait for power limit to stabilize (capacitor chargeup)
 
   // initialize stepper by doing one step
-  long timex = micros();
   stepMotors(MICROSTEPPING, MICROSTEPPING);
-  Serial.println(micros()-timex);
 
   setupMPU9250();
 
@@ -197,7 +210,7 @@ void waitForTargetAngle() {
       correctAngleCount = 0;
     }
   }
-  enable = true;
+  enableBot();
   Serial.println("done!");
 }
 
@@ -206,6 +219,8 @@ boolean getAccelGyro = true;
 void loop() {
   //serialReadPosition();
   serialReadDirection();
+  
+  setPowerLimit();
 
   playTone();
 
@@ -237,7 +252,6 @@ void loop() {
     pid_angle_output_motor2 = calculatePidAngle(pid_angle_setpoint_motor2, pid_angle_i_motor2, pid_angle_error_motor2);
   }
 
-  long timey = micros();
   int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, motor_step_iteration_interval, +rotation_speed_setpoint/2.0);
   int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, motor_step_iteration_interval, -rotation_speed_setpoint/2.0);
   
@@ -250,6 +264,10 @@ void loop() {
   }
 
   stepMotors(stepCount_motor1,stepCount_motor2);
+}
+
+void setPowerLimit(){
+  analogWrite(PIN_POWER_LIMIT,powerLimit);
 }
 
 long lastWarningTone;
@@ -280,6 +298,14 @@ void disableBot(){
   rotation_speed_setpoint = 0;
   pid_position_setpoint_motor1 = 0;
   pid_position_setpoint_motor2 = 0;
+  
+  powerLimit = 0;
+}
+
+void enableBot(){  
+  enable = true;
+  powerLimit = POWER_LIMIT_STARTUP_VALUE;
+  _delay_us(POWER_LIMIT_SETTLE_TIME_MICROS); 
 }
 
 void serialReadPosition() {
