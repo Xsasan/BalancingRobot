@@ -7,7 +7,7 @@
 const float INITIAL_TARGET_ANGLE = 2.0;
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
 const float MAX_FULL_STEPS_PER_SECOND = 900;
-const float MAX_ACCELLERATION = 250.0;
+const float MAX_ACCELLERATION = 150.0;
 const float MAX_ACCELLERATION_UNTIL_FULL_STEPS_PER_SECOND = 450;
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.9992; // how much to use gyro value compared to accerelometer value
 
@@ -16,21 +16,21 @@ const float MAX_BODY_SPEED_FACTOR = 0.4;
 
 // --------------------- START PID settings ---------------------
 const float PID_ANGLE_MAX = 100;
-const float PID_ANGLE_P_GAIN = 6;
+const float PID_ANGLE_P_GAIN = 5;
 const float PID_ANGLE_I_GAIN = 0.05;
 const float PID_ANGLE_D_GAIN = -250;
 const float PID_ANGLE_I_MAX = 20;
 const float PID_ANGLE_D_MAX = 20;
 
 const float PID_SPEED_MAX = 100;
-const float PID_SPEED_P_GAIN = 11.5;
+const float PID_SPEED_P_GAIN = 11.0;
 const float PID_SPEED_I_GAIN = 0.05;
 const float PID_SPEED_D_GAIN = 0;
 const float PID_SPEED_I_MAX = 20;
 const float PID_SPEED_D_MAX = 20;
 
 const float PID_POSITION_MAX = 100;
-const float PID_POSITION_P_GAIN = -6;
+const float PID_POSITION_P_GAIN = -5;
 const float PID_POSITION_I_GAIN = 0;
 const float PID_POSITION_D_GAIN = 0;
 const float PID_POSITION_I_MAX = 20;
@@ -45,12 +45,12 @@ const float POWER_LIMIT_SETTLE_TIME_MICROS = 200; // how long it takes until cha
 // ---------------------  END hardware settings  ---------------------
 
 // --------------------- START wiring settings ---------------------
-const int PIN_MOTOR_1_STEP = 12;
-const int PIN_MOTOR_2_STEP = 11;
-const int PIN_MOTOR_3_STEP = 10;
-const int PIN_MOTOR_1_DIRECTION = 16;
-const int PIN_MOTOR_2_DIRECTION = 15;
-const int PIN_MOTOR_3_DIRECTION = 14;
+const int PIN_MOTOR_1_STEP = 13;
+const int PIN_MOTOR_2_STEP = 12;
+const int PIN_MOTOR_3_STEP = 11;
+const int PIN_MOTOR_1_DIRECTION = 17;
+const int PIN_MOTOR_2_DIRECTION = 16;
+const int PIN_MOTOR_3_DIRECTION = 15;
 
 const int PIN_BUZZER = 3;
 
@@ -81,7 +81,7 @@ long motor_steps[2];
 unsigned long last_motor_step_time; // the last time stepMotors() was called
 float motor_step_iteration_interval; // how long between two calls of stepMotors()
 
-const int POWER_LIMIT_STARTUP_VALUE = 75;
+const int POWER_LIMIT_STARTUP_VALUE = 120;
 int powerLimit = 0; // 0-255 where 255 = maximum power (about 0.6A depending on setting of potentiometer on DRV8834)
 // ---------------------  END motor variables  ---------------------
 
@@ -142,13 +142,13 @@ float pid_position_i_motor2;
 // ------------------------ START music ------------------------
 // notes in the melody:
 int melody[] = {
-  C4, 250, 30,
-  G3, 125, 30,
-  G3, 125, 30,
-  A3, 250, 30,
-  G3, 250, 300,
-  B3, 250, 30,
-  C4, 250, 30
+  NOTE_C4, 250, 30,
+  NOTE_G3, 125, 30,
+  NOTE_G3, 125, 30,
+  NOTE_A3, 250, 30,
+  NOTE_G3, 250, 300,
+  NOTE_B3, 250, 30,
+  NOTE_C4, 250, 30
 };
 float melodySpeedSlowdown = 1.1;
 // ------------------------  END music  ------------------------
