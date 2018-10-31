@@ -2,20 +2,17 @@
 #include <digitalWriteFast.h>
 #include "notes.h"
 #include "util/delay.h"
+#include "botlib.h"
 
 // --------------------- START custom settings ---------------------
 const float INITIAL_TARGET_ANGLE = 2.0;
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
-const float MAX_FULL_STEPS_PER_SECOND = 900;
 const float MAX_ACCELLERATION = 150.0;
 const float MAX_ACCELLERATION_UNTIL_FULL_STEPS_PER_SECOND = 450;
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.9992; // how much to use gyro value compared to accerelometer value
-
-const float MAX_BODY_SPEED_FACTOR = 0.4;
 // ---------------------  END custom settings  ---------------------
 
 // --------------------- START PID settings ---------------------
-const float PID_ANGLE_MAX = 100;
 const float PID_ANGLE_P_GAIN = 5;
 const float PID_ANGLE_I_GAIN = 0.05;
 const float PID_ANGLE_D_GAIN = -250;
@@ -37,53 +34,10 @@ const float PID_POSITION_I_MAX = 20;
 const float PID_POSITION_D_MAX = 20;
 // --------------------- END PID settings ---------------------
 
-// --------------------- START hardware settings ---------------------
-const int MOTOR_STEPS_PER_360 = 200;
-const int MICROSTEPPING = 32; // microstepping selected on the driver
-const float MINIMUM_PIN_DELAY_MICROS = 1.9; // driver specific: how long a pin has to hold the output level to be registered by the driver (1.9us for DRV8834)
-const float POWER_LIMIT_SETTLE_TIME_MICROS = 200; // how long it takes until changes on power limit take effect
-// ---------------------  END hardware settings  ---------------------
-
-// --------------------- START wiring settings ---------------------
-const int PIN_MOTOR_1_STEP = 13;
-const int PIN_MOTOR_2_STEP = 12;
-const int PIN_MOTOR_3_STEP = 11;
-const int PIN_MOTOR_1_DIRECTION = 17;
-const int PIN_MOTOR_2_DIRECTION = 16;
-const int PIN_MOTOR_3_DIRECTION = 15;
-
-const int PIN_BUZZER = 3;
-
-const int PIN_POWER_LIMIT = 9;
-// ---------------------  END wiring settings  ---------------------
-
-// --------------------- START calculated constants ---------------------
-const int STEPS_PER_ROTATION = MOTOR_STEPS_PER_360 * MICROSTEPPING;
-const float STEPS_PER_DEGREE = STEPS_PER_ROTATION / 360.0;
-const int MAX_STEPS_PER_SECOND = MAX_FULL_STEPS_PER_SECOND * MICROSTEPPING;
-const int MIN_STEP_FREQUENCY_MICROS = 1000000 / MAX_STEPS_PER_SECOND;
-// ---------------------  END calculated constants  ---------------------
-
-// --------------------- START various constants ---------------------
-const int MOTOR_LEFT_ID = 0;
-const int MOTOR_RIGHT_ID = 1;
-// ---------------------  END various constants  ---------------------
-
 // --------------------- START gyro variables ---------------------
 float ax, ay, az;
 float gx, gy, gz;
-float mx, my, mz;
 // ---------------------  END gyro variables  ---------------------
-
-// --------------------- START motor variables ---------------------
-boolean last_motor_direction[2];
-long motor_steps[2];
-unsigned long last_motor_step_time; // the last time stepMotors() was called
-float motor_step_iteration_interval; // how long between two calls of stepMotors()
-
-const int POWER_LIMIT_STARTUP_VALUE = 120;
-int powerLimit = 0; // 0-255 where 255 = maximum power (about 0.6A depending on setting of potentiometer on DRV8834)
-// ---------------------  END motor variables  ---------------------
 
 // --------------------- START pitch calculation variables ---------------------
 float pitch = INITIAL_TARGET_ANGLE;
@@ -124,15 +78,11 @@ float pid_angle_output_motor2;
 float pid_angle_i_motor1;
 float pid_angle_i_motor2;
 
-float pid_speed_setpoint = 0.0;
-float rotation_speed_setpoint = 0.0;
 float pid_speed_output_motor1;
 float pid_speed_output_motor2;
 float pid_speed_i_motor1;
 float pid_speed_i_motor2;
 
-float pid_position_setpoint_motor1 = 0.0;
-float pid_position_setpoint_motor2 = 0.0;
 float pid_position_output_motor1;
 float pid_position_output_motor2;
 float pid_position_i_motor1;
@@ -154,9 +104,6 @@ float melodySpeedSlowdown = 1.1;
 // ------------------------  END music  ------------------------
 
 boolean enable = false;
-const int SPEED_MODE = 1;
-const int POSITION_MODE = 2;
-int mode = POSITION_MODE;
 
 void setup() {
   Serial.begin(57600); // startup serial communication with given baud rate
@@ -224,8 +171,6 @@ void loop() {
   
   setPowerLimit();
 
-  playTone();
-
   if (!enable) {
     waitForTargetAngle();
   }
@@ -240,8 +185,8 @@ void loop() {
     }
   } else {
     if (mode >= POSITION_MODE){
-      pid_position_output_motor1 = calculatePidPosition(pid_position_setpoint_motor1, pid_position_i_motor1, pid_position_error_motor1, motor_steps[MOTOR_RIGHT_ID]); // TODO why RIGHT and not LEFT?
-      pid_position_output_motor2 = calculatePidPosition(pid_position_setpoint_motor2, pid_position_i_motor2, pid_position_error_motor2, motor_steps[MOTOR_LEFT_ID]); // TODO why LEFT and not RIGHT?
+      pid_position_output_motor1 = calculatePidPosition(pid_position_setpoint_motor1, pid_position_i_motor1, pid_position_error_motor1, motor_steps[MOTOR_RIGHT_ID]);
+      pid_position_output_motor2 = calculatePidPosition(pid_position_setpoint_motor2, pid_position_i_motor2, pid_position_error_motor2, motor_steps[MOTOR_LEFT_ID]);
       calculatePidSpeedSetpoint();
     }
   
@@ -254,8 +199,8 @@ void loop() {
     pid_angle_output_motor2 = calculatePidAngle(pid_angle_setpoint_motor2, pid_angle_i_motor2, pid_angle_error_motor2);
   }
 
-  int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, motor_step_iteration_interval, +rotation_speed_setpoint/2.0);
-  int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, motor_step_iteration_interval, -rotation_speed_setpoint/2.0);
+  int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, motor_step_iteration_interval, +rotation_speed_setpoint/2.0, MAX_ACCELLERATION);
+  int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, motor_step_iteration_interval, -rotation_speed_setpoint/2.0, MAX_ACCELLERATION);
   
   if (abs(stepCount_motor1) > 2*MICROSTEPPING || abs(stepCount_motor2) > 2*MICROSTEPPING){
     playWarningTone(2000);
@@ -266,10 +211,6 @@ void loop() {
   }
 
   stepMotors(stepCount_motor1,stepCount_motor2);
-}
-
-void setPowerLimit(){
-  analogWrite(PIN_POWER_LIMIT,powerLimit);
 }
 
 long lastWarningTone;
@@ -308,91 +249,6 @@ void enableBot(){
   enable = true;
   powerLimit = POWER_LIMIT_STARTUP_VALUE;
   _delay_us(POWER_LIMIT_SETTLE_TIME_MICROS); 
-}
-
-void serialReadPosition() {
-  if (Serial.available() > 0) {
-    Serial.setTimeout(50); // we don't want to wait for the usual 1 second timeout as the bot would tipover
-    delay(5);
-    pid_position_setpoint_motor1 = Serial.parseInt();
-    delay(5);
-    pid_position_setpoint_motor2 = Serial.parseInt();
-    delay(5);
-    while (Serial.available() > 0) {
-      volatile char character = Serial.read(); // clear buffer of remaining characters
-    }
-    Serial.print("understood: ");
-    Serial.print(pid_position_setpoint_motor1);
-    Serial.print(" ");
-    Serial.println(pid_position_setpoint_motor2);
-  }
-}
-
-long lastDirectionInput;
-float target_speed;
-float target_rotation_speed;
-
-void serialReadDirection() {
-  if (Serial.available() > 0) {
-     lastDirectionInput = millis();
-     mode = SPEED_MODE;
-  
-     char c = Serial.read();
-     boolean validInput = true;
-
-     switch (c){
-      case 'f': target_speed = 1; target_rotation_speed = 0; break;
-      case 'b': target_speed = -1; target_rotation_speed = 0; break;
-      case 'l': target_speed = 0; target_rotation_speed = -0.5; break;
-      case 'r': target_speed = 0; target_rotation_speed = 0.5; break;
-      case 'A': target_speed = 1; target_rotation_speed = -0.25; break;
-      case 'B': target_speed = 1; target_rotation_speed = 0.25; break;
-      case 'C': target_speed = -1; target_rotation_speed = 0.25; break;
-      case 'D': target_speed = -1; target_rotation_speed = -0.25; break;
-      case '0': target_speed = 0; target_rotation_speed = 0; break;
-      default: validInput = false;
-     }
-
-     if (validInput){
-        target_speed *= MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
-        target_rotation_speed *= MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
-     }
-  } else {
-    if (millis() - lastDirectionInput > 2000){
-      stopSpeedRemoteControl();
-    }
-  }
-
-  if (mode == SPEED_MODE){
-    rampupDirectionControl();
-  }
-}
-
-void rampupDirectionControl(){
-  float coefficient = 0.002;
-  pid_speed_setpoint = pid_speed_setpoint * (1-coefficient) + target_speed * coefficient;
-  rotation_speed_setpoint  = rotation_speed_setpoint * (1-coefficient) + target_rotation_speed * coefficient;
-
-  if (abs(target_speed - pid_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
-    pid_speed_setpoint = target_speed;
-  }
-
-  if (abs(target_rotation_speed - rotation_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
-    rotation_speed_setpoint = target_rotation_speed;
-  }
-}
-
-void stopSpeedRemoteControl(){
-   target_speed = 0;
-   target_rotation_speed = 0;
-}
-
-void playTone() {
-  /*if (abs(pid_position_error_motor1) > 1500){
-    tone(PIN_BUZZER, abs(pid_position_error_motor1)*0.3);
-  } else {
-    noTone(PIN_BUZZER);
-  }*/
 }
 
 void calculatePitch() {
@@ -482,80 +338,6 @@ void calculatePidSpeedSetpoint() {
   rotation_speed_setpoint = 0.0 + (pid_position_output_motor1-pid_position_output_motor2) / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
 }
 
-int calculateStepCount(float pid_angle_output, float& stepsPerSecond, float& partialSteps, long motor_step_iteration_interval, float rotation_stepsPerSecond) {
-  float steps = howManySteps(pid_angle_output, stepsPerSecond, partialSteps, motor_step_iteration_interval, rotation_stepsPerSecond);
-  int stepCount = (int)steps;  
-  partialSteps = steps - stepCount;
-
-  return stepCount;
-}
-
-float howManySteps(float pid_angle_output, float& stepsPerSecond, float& partialSteps, long motor_step_iteration_interval, float rotation_stepsPerSecond) {
-  float factor = (float)pid_angle_output / PID_ANGLE_MAX;
-  float lastStepsPerSecond = stepsPerSecond;
-  stepsPerSecond = -factor * (float)MAX_STEPS_PER_SECOND + rotation_stepsPerSecond;
-
-  stepsPerSecond = ensureRange(stepsPerSecond, lastStepsPerSecond - MAX_ACCELLERATION, lastStepsPerSecond + MAX_ACCELLERATION);
-  stepsPerSecond = ensureRange(stepsPerSecond, -MAX_STEPS_PER_SECOND, MAX_STEPS_PER_SECOND);
-
-  return (motor_step_iteration_interval * (stepsPerSecond * 0.000001)) + partialSteps;
-}
-
-// Beware: digitalWriteFast needs hardcoded constants to work! So all combinations be hardcoded like this
-const void stepMotors(int stepsMotor1, int stepsMotor2){  
-  int directionMotor1 = stepsMotor1 >= 0 ? HIGH : LOW;
-  int directionMotor2 = stepsMotor2 >= 0 ? HIGH : LOW;
-
-  if (last_motor_direction[MOTOR_LEFT_ID] != directionMotor1) {
-    if (directionMotor1 == LOW) {
-        digitalWriteFast(PIN_MOTOR_1_DIRECTION, LOW);
-    } else {
-        digitalWriteFast(PIN_MOTOR_1_DIRECTION, HIGH);
-    }
-    last_motor_direction[MOTOR_LEFT_ID] = directionMotor1;
-    _delay_us(MINIMUM_PIN_DELAY_MICROS);
-  }
-  if (last_motor_direction[MOTOR_RIGHT_ID] != directionMotor2) {
-    if (directionMotor2 == LOW) {
-        digitalWriteFast(PIN_MOTOR_2_DIRECTION, LOW);
-    } else {
-        digitalWriteFast(PIN_MOTOR_2_DIRECTION, HIGH);
-    }
-    last_motor_direction[MOTOR_RIGHT_ID] = directionMotor2;
-    _delay_us(MINIMUM_PIN_DELAY_MICROS);
-  }
-
-  int counterMaximum = max(abs(stepsMotor1),abs(stepsMotor2));
-  for (int i = 0; i < counterMaximum; i++) {
-    if (i < abs(stepsMotor1)){
-      digitalWriteFast(PIN_MOTOR_1_STEP, LOW);
-    }
-    if (i < abs(stepsMotor2)){
-      digitalWriteFast(PIN_MOTOR_2_STEP, LOW);
-    }
-    
-    _delay_us(MINIMUM_PIN_DELAY_MICROS);
-    
-    if (i < abs(stepsMotor1)){
-      digitalWriteFast(PIN_MOTOR_1_STEP, HIGH);
-    }
-    if (i < abs(stepsMotor2)){
-      digitalWriteFast(PIN_MOTOR_2_STEP, HIGH);
-    }
-    
-    _delay_us(MINIMUM_PIN_DELAY_MICROS);
-  }
-
-  long currentTime = micros();
-  if (currentTime - last_motor_step_time > 10000 || motor_step_iteration_interval == 0){
-    motor_step_iteration_interval = 1000; // just a guess
-  } else {
-    motor_step_iteration_interval = motor_step_iteration_interval * 0.98 + (currentTime-last_motor_step_time) * 0.02; // smooth/average the iteration time
-  }
-  last_motor_step_time = currentTime;
-  motor_steps[MOTOR_LEFT_ID] += stepsMotor1;
-  motor_steps[MOTOR_RIGHT_ID] += stepsMotor2;
-}
 
 //-------------------------------------------------------------------------
 //--------------------------- helper methos -------------------------------
@@ -571,91 +353,14 @@ int sign(float value) {
   }
 }
 
-float ensureRange(float value, float val1, float val2) {
-  float min = val1 < val2 ? val1 : val2;
-  float max = val1 >= val2 ? val1 : val2;
-  if (value < min) {
-    return min;
-  } else if (value > max) {
-    return max;
-  }
-  return value;
-}
-
-// Check to see if we are recovering from a reset event and clear the error register
-void readAndInitErrorRegister() {
-  boolean mcusrMessageFound = false;
-  if (MCUSR & WDRF) {
-    Serial.println("Rebooting from a Watchdog Reset.\n");
-    mcusrMessageFound = true;
-  }
-  if (MCUSR & BORF) {
-    Serial.println("Rebooting from a Brown-out Reset.\n");
-    mcusrMessageFound = true;
-  }
-  if (MCUSR & EXTRF) {
-    Serial.println("Rebooting from an External Reset.\n");
-    mcusrMessageFound = true;
-  }
-  if (MCUSR & PORF) {
-    Serial.println("Rebooting from a Power Reset.\n");
-    mcusrMessageFound = true;
-  }
-
-  if (!mcusrMessageFound) {
-    if (MCUSR == 0x00) {
-      Serial.println("Rebooting with emtpy MCUSR register");
-    } else {
-      Serial.println("Rebooting from an unknown reason : " + MCUSR);
-    }
-  }
-
-  // Clear register
-  MCUSR = 0x00;
-}
-
-
-
 //-------------------------------------------------------------------------
 //---------------------- MPU9250 specific stuff ---------------------------
 //-------------------------------------------------------------------------
-
-const int I2C_ADDRESS_GYRO = 0x68;
-const int I2C_ADDRESS_MAGNETOMETER = 0x0C;
-
 const float ACCERELOMETER_G_CONFIG = 2.0;
 const float GYRO_DEG_PER_SECOND_CONFIG = 250.0;
 
 const float GYRO_RANGE_FACTOR = GYRO_DEG_PER_SECOND_CONFIG / 32768.0;
 const float ACCEL_RANGE_FACTOR = ACCERELOMETER_G_CONFIG / 32768.0;
-const float COMPASS_RANGE_FACTOR = 4800.0 / 32768.0;
-
-void setupMPU9250() {
-  // init I2C bus
-  Wire.begin();
-  Wire.setClock(400000); // "fast mode", default is 100000
-
-  // initialize device
-  Serial.print("Initializing MPU9250...");
-  delay(500);
-  // set clock source to gyro y-axis pll signal instead of internal 8 MHZ oscillator for better quality
-  // this will disable low-power capabilitites but we don't use them anyway
-  I2Cdev::writeBits(I2C_ADDRESS_GYRO, 0x6B, 2, 2, 0x02);
-  // set gyro configruation to 250 deg/s
-  I2Cdev::writeBits(I2C_ADDRESS_GYRO, 0x1B, 4, 2, 0x00);
-  // set gyro configruation to 2g (g = earth gravitation (9.81m/s^2))
-  I2Cdev::writeBits(I2C_ADDRESS_GYRO, 0x1C, 4, 2, 0x00);
-  // enable low-pass filter to 44hz to reduce influence of vibrations
-  I2Cdev::writeBits(I2C_ADDRESS_GYRO, 0x1A, 2, 3, 0x03);
-  // enable magnetometer
-  I2Cdev::writeByte(I2C_ADDRESS_MAGNETOMETER, 0x0A, 0x01);
-  // disable MPU9250 sleep-mode
-  I2Cdev::writeBit(I2C_ADDRESS_GYRO, 0x6B, 6, false);
-
-
-  delay(500);
-  Serial.println("done!");
-}
 
 void getAccelGyroData(void) {
   uint8_t buffer[14];
@@ -667,13 +372,4 @@ void getAccelGyroData(void) {
   gx = ((((int16_t)buffer[8]) << 8) | buffer[9]) * GYRO_RANGE_FACTOR;
   gy = ((((int16_t)buffer[10]) << 8) | buffer[11]) * GYRO_RANGE_FACTOR;
   gz = ((((int16_t)buffer[12]) << 8) | buffer[13]) * GYRO_RANGE_FACTOR;
-}
-
-void getCompassData(void) {
-  uint8_t buffer[6];
-  I2Cdev::readBytes(0x0C, 0x03, 6, buffer);
-
-  mx = (((int16_t)(buffer[1]) << 8) | buffer[0]) * COMPASS_RANGE_FACTOR;
-  my = (((int16_t)(buffer[3]) << 8) | buffer[2]) * COMPASS_RANGE_FACTOR;
-  mz = (((int16_t)(buffer[5]) << 8) | buffer[4]) * COMPASS_RANGE_FACTOR;
 }
