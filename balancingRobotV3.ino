@@ -113,8 +113,10 @@ void setup() {
   // set motor control pins to output mode
   pinMode(PIN_MOTOR_1_STEP, OUTPUT);
   pinMode(PIN_MOTOR_2_STEP, OUTPUT);
+  pinMode(PIN_MOTOR_3_STEP, OUTPUT);
   pinMode(PIN_MOTOR_1_DIRECTION, OUTPUT);
   pinMode(PIN_MOTOR_2_DIRECTION, OUTPUT);
+  pinMode(PIN_MOTOR_3_DIRECTION, OUTPUT);
 
   // set buzzer and power limit pin to output mode
   pinMode(PIN_BUZZER, OUTPUT);
