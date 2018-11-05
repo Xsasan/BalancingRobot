@@ -6,10 +6,11 @@
 
 // --------------------- START custom settings ---------------------
 const float INITIAL_TARGET_ANGLE = 2.0;
+const float STARTUP_ANGLE_TOLERANCE = 3.0;
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
 const float MAX_ACCELLERATION = 150.0;
 const float MAX_ACCELLERATION_UNTIL_FULL_STEPS_PER_SECOND = 450;
-const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.9992; // how much to use gyro value compared to accerelometer value
+const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.999; // how much to use gyro value compared to accerelometer value
 // ---------------------  END custom settings  ---------------------
 
 // --------------------- START PID settings ---------------------
@@ -104,6 +105,7 @@ float melodySpeedSlowdown = 1.1;
 // ------------------------  END music  ------------------------
 
 boolean enable = false;
+long disableTime = 0;
 
 void setup() {
   Serial.begin(57600); // startup serial communication with given baud rate
@@ -152,14 +154,20 @@ void waitForTargetAngle() {
   // wait until bot is reasonably near target angle so we can start
   Serial.println("Wait until bot alignment is near target angle...");
   int correctAngleCount = 0;
-  while (correctAngleCount < 50) {
+  while (correctAngleCount < 10) {
     getAccelGyroData();
-    calculatePitch();
-    if (abs(INITIAL_TARGET_ANGLE - pitch) < 2.0) {
-      correctAngleCount++;
+    calculatePitchWithGyroCoefficient(0);
+    Serial.println(pitch);
+    float angleOffset = abs(INITIAL_TARGET_ANGLE - pitch);
+    if (angleOffset < 60){
+      playWarningToneWithDuration((30.0-min(angleOffset,60.0))/60.0*600,50);
+    }
+    if (angleOffset < STARTUP_ANGLE_TOLERANCE) {
+      correctAngleCount++;      
     } else {
       correctAngleCount = 0;
     }
+    delay(50);
   }
   enableBot();
   Serial.println("done!");
@@ -205,25 +213,21 @@ void loop() {
   int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, motor_step_iteration_interval, -rotation_speed_setpoint/2.0, MAX_ACCELLERATION);
   
   if (abs(stepCount_motor1) > 2*MICROSTEPPING || abs(stepCount_motor2) > 2*MICROSTEPPING){
-    playWarningTone(2000);
+    playWarningTone(400);
   } else if (abs(stepCount_motor1) > 1.5*MICROSTEPPING || abs(stepCount_motor2) > 1.5*MICROSTEPPING){
-    playWarningTone(1000);
+    playWarningTone(300);
   } else if (abs(stepCount_motor1) > MICROSTEPPING || abs(stepCount_motor2) > MICROSTEPPING){
-    playWarningTone(500);
+    playWarningTone(200);
   }
 
   stepMotors(stepCount_motor1,stepCount_motor2);
 }
 
-long lastWarningTone;
-static int warningToneDuration = 200;
-void playWarningTone(int frequency){
-  if (millis()-lastWarningTone >  warningToneDuration){
-    tone(PIN_BUZZER, frequency, warningToneDuration);
-  }
-}
-
 void disableBot(){
+  Serial.println("disabling bot");
+  playWarningToneWithDuration(4000,2000);
+  disableTime = millis();
+  
   enable = false;
   stepsPerSecond_motor1 = 0;
   stepsPerSecond_motor2 = 0;
@@ -254,6 +258,10 @@ void enableBot(){
 }
 
 void calculatePitch() {
+  calculatePitchWithGyroCoefficient(COMPLEMENTARY_FILTER_GYRO_COEFFICIENT);
+}
+
+void calculatePitchWithGyroCoefficient(float gyroCoefficient) {
   // calulate time between two accel/gyro datasets
   unsigned long micros2 = micros();
   pitchCalculation_delta_t = micros2 - lastPitchCalculationTime;
@@ -266,7 +274,7 @@ void calculatePitch() {
   pitchAcc = atan(ax / sqrt(squaresum)) * RAD_TO_DEG;
 
   // use complementary filter to get accurate pitch fast and without drift
-  pitch = COMPLEMENTARY_FILTER_GYRO_COEFFICIENT * pitch + (1.0 - COMPLEMENTARY_FILTER_GYRO_COEFFICIENT) * pitchAcc;
+  pitch = gyroCoefficient * pitch + (1.0 - gyroCoefficient) * pitchAcc;
 }
 
 float calculatePidAngle(float& pid_angle_setpoint, float& pid_angle_i, float& pid_angle_error) {

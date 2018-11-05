@@ -11,7 +11,8 @@
 
 // ---------------------  START custom settings  ---------------------
 const float MAX_FULL_STEPS_PER_SECOND = 900;
-const float MAX_BODY_SPEED_FACTOR = 0.4;
+const float MAX_BODY_SPEED_FACTOR_DEFAULT = 0.5;
+float MAX_BODY_SPEED_FACTOR = MAX_BODY_SPEED_FACTOR_DEFAULT/2.0;
 // ---------------------  END custom settings  -----------------------
 
 // --------------------- START hardware settings ---------------------
@@ -148,6 +149,27 @@ void backward_right(){
 	target_speed = -1; target_rotation_speed = -0.25;
 }
 
+void stop(){
+	target_speed = 0; target_rotation_speed = 0;
+}
+
+void speed(int value){
+	MAX_BODY_SPEED_FACTOR = value/10 * MAX_BODY_SPEED_FACTOR_DEFAULT;
+}
+
+long lastWarningTone;
+static int DEFAULT_WARNING_TONE_DURATION = 200;
+
+void playWarningToneWithDuration(int frequency, int duration){
+  if (millis()-lastWarningTone >  DEFAULT_WARNING_TONE_DURATION){
+    tone(PIN_BUZZER, frequency, DEFAULT_WARNING_TONE_DURATION);
+  }
+}
+
+void playWarningTone(int frequency){
+  playWarningToneWithDuration(frequency, DEFAULT_WARNING_TONE_DURATION);
+}
+
 void serialReadDirection() {
   if (Serial.available() > 0) {
      lastDirectionInput = millis();
@@ -169,7 +191,27 @@ void serialReadDirection() {
       case 'I': forward_right(); break;
       case 'H': backward_left(); break;
       case 'J': backward_right(); break;
-      case '0': target_speed = 0; target_rotation_speed = 0; break;
+      case 'V': playWarningToneWithDuration(150,3000); break;
+      case 'v': /* Horn off */ break;
+      case 'X': /* extra on */ break;
+      case 'x': /* extra off */ break;
+      case 'W': /* front lights on */ break;
+      case 'w': /* front lights off */ break;
+      case 'U': /* back lights on */ break;
+      case 'u': /* back lights off */ break;
+      case 'D': stop(); break;
+      case 'S': stop(); break;
+      case '0': stop(); break;
+      case '1': speed(1); break;
+      case '2': speed(2); break;
+      case '3': speed(3); break;
+      case '4': speed(4); break;
+      case '5': speed(5); break;
+      case '6': speed(6); break;
+      case '7': speed(7); break;
+      case '8': speed(8); break;
+      case '9': speed(9); break;
+      case 'q': speed(10); break;
       default: validInput = false;
      }
 
