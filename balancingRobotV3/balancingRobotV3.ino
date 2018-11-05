@@ -67,8 +67,10 @@ unsigned long positionCalculation_delta_t;
 // --------------------- START step calculation variables ---------------------
 float partialSteps_motor1;
 float partialSteps_motor2;
+float partialSteps_motor3;
 float stepsPerSecond_motor1;
 float stepsPerSecond_motor2;
+float stepsPerSecond_motor3;
 // ---------------------  END step calculation variables  ---------------------
 
 // --------------------- START pid variables ---------------------
@@ -108,7 +110,7 @@ boolean enable = false;
 long disableTime = 0;
 
 void debugLoop(){  
-    //Serial.println(pid_speed_i_motor1);
+    //Serial.println(head_rotation_speed_setpoint);
 }
 
 void setup() {
@@ -136,7 +138,7 @@ void setup() {
   _delay_us(POWER_LIMIT_SETTLE_TIME_MICROS); // wait for power limit to stabilize (capacitor chargeup)
 
   // initialize stepper by doing one step
-  stepMotors(MICROSTEPPING, MICROSTEPPING);
+  stepMotors(MICROSTEPPING, MICROSTEPPING, MICROSTEPPING);
 
   setupMPU9250();
 
@@ -220,6 +222,7 @@ void loop() {
 
   int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, motor_step_iteration_interval, +rotation_speed_setpoint/2.0, MAX_ACCELLERATION);
   int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, motor_step_iteration_interval, -rotation_speed_setpoint/2.0, MAX_ACCELLERATION);
+  int stepCount_motor3 = head_rotation_speed_setpoint*5.0;
   
   /*if (abs(stepCount_motor1) > 2*MICROSTEPPING || abs(stepCount_motor2) > 2*MICROSTEPPING){
     playWarningTone(400);
@@ -229,7 +232,7 @@ void loop() {
     playWarningTone(200);
   }*/
 
-  stepMotors(stepCount_motor1,stepCount_motor2);
+  stepMotors(stepCount_motor1,stepCount_motor2,stepCount_motor3);
 }
 
 void disableBot(){

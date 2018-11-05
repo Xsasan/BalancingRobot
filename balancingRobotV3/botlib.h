@@ -1,6 +1,7 @@
 #define I2C_ADDRESS_GYRO  0x68
 #define MOTOR_LEFT_ID 0
 #define MOTOR_RIGHT_ID 1
+#define MOTOR_TOP_ID 2
 #define PIN_MOTOR_1_STEP 13
 #define PIN_MOTOR_2_STEP 12
 #define PIN_MOTOR_3_STEP 11
@@ -46,6 +47,7 @@ const int I2C_ADDRESS_MAGNETOMETER = 0x0C;
 const float COMPASS_RANGE_FACTOR = 4800.0 / 32768.0;
 
 const float RAMPUP_SPEED_COEFFICIENT = 0.0015;
+const float RAMPUP_HEAD_SPEED_COEFFICIENT = 0.0015;
 
 
 float ensureRange(float value, float val1, float val2) {
@@ -88,8 +90,9 @@ void getCompassData(void) {
   mz = (((int16_t)(buffer[5]) << 8) | buffer[4]) * COMPASS_RANGE_FACTOR;
 }
 
-float target_speed;
-float target_rotation_speed;
+float target_speed = 0.0;
+float target_rotation_speed = 0.0;
+float target_head_rotation_speed = 0.0;
 
 void stopSpeedRemoteControl(){
    target_speed = 0;
@@ -104,10 +107,12 @@ long lastDirectionInput;
 
 float pid_speed_setpoint = 0.0;
 float rotation_speed_setpoint = 0.0;
+float head_rotation_speed_setpoint = 0.0;
 
 void rampupDirectionControl(){
   pid_speed_setpoint = pid_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_speed * RAMPUP_SPEED_COEFFICIENT;
-  rotation_speed_setpoint  = rotation_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_rotation_speed * RAMPUP_SPEED_COEFFICIENT;
+  rotation_speed_setpoint = rotation_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_rotation_speed * RAMPUP_SPEED_COEFFICIENT;
+  head_rotation_speed_setpoint = head_rotation_speed_setpoint * (1-RAMPUP_HEAD_SPEED_COEFFICIENT) + target_head_rotation_speed * RAMPUP_HEAD_SPEED_COEFFICIENT;
 
   if (abs(target_speed - pid_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
     pid_speed_setpoint = target_speed;
@@ -115,6 +120,10 @@ void rampupDirectionControl(){
 
   if (abs(target_rotation_speed - rotation_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
     rotation_speed_setpoint = target_rotation_speed;
+  }
+  
+  if (abs(target_head_rotation_speed - head_rotation_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
+    head_rotation_speed_setpoint = target_head_rotation_speed;
   }
 }
 
@@ -130,8 +139,16 @@ void left(){
 	target_speed = 0; target_rotation_speed = -0.5;
 }
 
+void head_left(){
+	target_speed = 0; target_head_rotation_speed = -0.5;
+}
+
 void right(){
 	target_speed = 0; target_rotation_speed = 0.5; 
+}
+
+void head_right(){
+	target_speed = 0; target_head_rotation_speed = 0.5;
 }
 
 void forward_left(){
@@ -152,6 +169,10 @@ void backward_right(){
 
 void stop(){
 	target_speed = 0; target_rotation_speed = 0;
+}
+
+void head_stop(){
+	target_speed = 0; target_head_rotation_speed = 0;
 }
 
 void speed(int value){
@@ -196,10 +217,10 @@ void serialReadDirection() {
       case 'v': /* Horn off */ break;
       case 'X': /* extra on */ break;
       case 'x': /* extra off */ break;
-      case 'W': /* front lights on */ break;
-      case 'w': /* front lights off */ break;
-      case 'U': /* back lights on */ break;
-      case 'u': /* back lights off */ break;
+      case 'W': head_left(); break;
+      case 'w': head_stop(); break;
+      case 'U': head_right(); break;
+      case 'u': head_stop(); break;
       case 'D': stop(); break;
       case 'S': stop(); break;
       case '0': stop(); break;
@@ -253,16 +274,17 @@ void serialReadPosition() {
 }
 
 // Beware: digitalWriteFast needs hardcoded constants to work! So all combinations be hardcoded like this
-boolean last_motor_direction[2];
+boolean last_motor_direction[3];
 unsigned long last_motor_step_time; // the last time stepMotors() was called
 
 float motor_step_iteration_interval; // how long between two calls of stepMotors()
 
-long motor_steps[2];
+long motor_steps[3];
 
-const void stepMotors(int stepsMotor1, int stepsMotor2){  
+const void stepMotors(int stepsMotor1, int stepsMotor2, int stepsMotor3){  
   int directionMotor1 = stepsMotor1 >= 0 ? HIGH : LOW;
   int directionMotor2 = stepsMotor2 >= 0 ? HIGH : LOW;
+  int directionMotor3 = stepsMotor3 >= 0 ? HIGH : LOW;
 
   if (last_motor_direction[MOTOR_LEFT_ID] != directionMotor1) {
     if (directionMotor1 == LOW) {
@@ -282,14 +304,26 @@ const void stepMotors(int stepsMotor1, int stepsMotor2){
     last_motor_direction[MOTOR_RIGHT_ID] = directionMotor2;
     _delay_us(MINIMUM_PIN_DELAY_MICROS);
   }
+  if (last_motor_direction[MOTOR_TOP_ID] != directionMotor3) {
+    if (directionMotor3 == LOW) {
+        digitalWriteFast(PIN_MOTOR_3_DIRECTION, LOW);
+    } else {
+        digitalWriteFast(PIN_MOTOR_3_DIRECTION, HIGH);
+    }
+    last_motor_direction[MOTOR_TOP_ID] = directionMotor3;
+    _delay_us(MINIMUM_PIN_DELAY_MICROS);
+  }
 
-  int counterMaximum = max(abs(stepsMotor1),abs(stepsMotor2));
+  int counterMaximum = max(max(abs(stepsMotor1),abs(stepsMotor2)),abs(stepsMotor3));
   for (int i = 0; i < counterMaximum; i++) {
     if (i < abs(stepsMotor1)){
       digitalWriteFast(PIN_MOTOR_1_STEP, LOW);
     }
     if (i < abs(stepsMotor2)){
       digitalWriteFast(PIN_MOTOR_2_STEP, LOW);
+    }
+    if (i < abs(stepsMotor3)){
+      digitalWriteFast(PIN_MOTOR_3_STEP, LOW);
     }
     
     _delay_us(MINIMUM_PIN_DELAY_MICROS);
@@ -299,6 +333,9 @@ const void stepMotors(int stepsMotor1, int stepsMotor2){
     }
     if (i < abs(stepsMotor2)){
       digitalWriteFast(PIN_MOTOR_2_STEP, HIGH);
+    }
+    if (i < abs(stepsMotor3)){
+      digitalWriteFast(PIN_MOTOR_3_STEP, HIGH);
     }
     
     _delay_us(MINIMUM_PIN_DELAY_MICROS);
@@ -313,6 +350,7 @@ const void stepMotors(int stepsMotor1, int stepsMotor2){
   last_motor_step_time = currentTime;
   motor_steps[MOTOR_LEFT_ID] += stepsMotor1;
   motor_steps[MOTOR_RIGHT_ID] += stepsMotor2;
+  motor_steps[MOTOR_TOP_ID] += stepsMotor3;
 }
 
 void setPowerLimit(){
