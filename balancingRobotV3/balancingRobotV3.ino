@@ -5,7 +5,7 @@
 #include "botlib.h"
 
 // --------------------- START custom settings ---------------------
-const float INITIAL_TARGET_ANGLE = 2.0;
+const float INITIAL_TARGET_ANGLE = 2.5;
 const float STARTUP_ANGLE_TOLERANCE = 3.0;
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
 const float MAX_ACCELLERATION = 150.0;
@@ -107,6 +107,10 @@ float melodySpeedSlowdown = 1.1;
 boolean enable = false;
 long disableTime = 0;
 
+void debugLoop(){  
+    //Serial.println(target_speed);
+}
+
 void setup() {
   Serial.begin(57600); // startup serial communication with given baud rate
   Serial.println("\nStartup...");
@@ -155,27 +159,32 @@ void waitForTargetAngle() {
   Serial.println("Wait until bot alignment is near target angle...");
   int correctAngleCount = 0;
   while (correctAngleCount < 10) {
+    delay(50);
     getAccelGyroData();
     calculatePitchWithGyroCoefficient(0);
     Serial.println(pitch);
     float angleOffset = abs(INITIAL_TARGET_ANGLE - pitch);
-    if (angleOffset < 60){
-      playWarningToneWithDuration((30.0-min(angleOffset,60.0))/60.0*600,50);
+    if (angleOffset < 15){
+      float y = 15.0;
+      playWarningToneWithDuration((y-min(angleOffset,y))/y*500,50);
     }
     if (angleOffset < STARTUP_ANGLE_TOLERANCE) {
       correctAngleCount++;      
     } else {
       correctAngleCount = 0;
     }
-    delay(50);
   }
   enableBot();
   Serial.println("done!");
 }
 
 boolean getAccelGyro = true;
-
+int count = 0;
 void loop() {
+  if (count++ >= 50){
+    count = 0;
+    debugLoop();
+  }
   //serialReadPosition();
   serialReadDirection();
   
