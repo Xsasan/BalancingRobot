@@ -22,10 +22,10 @@ const float PID_ANGLE_D_MAX = 20;
 
 const float PID_SPEED_MAX = 100;
 const float PID_SPEED_P_GAIN = 11.0;
-const float PID_SPEED_I_GAIN = 0.05;
+const float PID_SPEED_I_GAIN = 0.01;
 const float PID_SPEED_D_GAIN = 0;
-const float PID_SPEED_I_MAX = 20;
-const float PID_SPEED_D_MAX = 20;
+const float PID_SPEED_I_MAX = 50000;
+const float PID_SPEED_D_MAX = 10000;
 
 const float PID_POSITION_MAX = 100;
 const float PID_POSITION_P_GAIN = -5;
@@ -108,7 +108,7 @@ boolean enable = false;
 long disableTime = 0;
 
 void debugLoop(){  
-    //Serial.println(target_speed);
+    //Serial.println(pid_speed_i_motor1);
 }
 
 void setup() {
@@ -221,20 +221,20 @@ void loop() {
   int stepCount_motor1 = calculateStepCount(pid_angle_output_motor1, stepsPerSecond_motor1, partialSteps_motor1, motor_step_iteration_interval, +rotation_speed_setpoint/2.0, MAX_ACCELLERATION);
   int stepCount_motor2 = calculateStepCount(pid_angle_output_motor2, stepsPerSecond_motor2, partialSteps_motor2, motor_step_iteration_interval, -rotation_speed_setpoint/2.0, MAX_ACCELLERATION);
   
-  if (abs(stepCount_motor1) > 2*MICROSTEPPING || abs(stepCount_motor2) > 2*MICROSTEPPING){
+  /*if (abs(stepCount_motor1) > 2*MICROSTEPPING || abs(stepCount_motor2) > 2*MICROSTEPPING){
     playWarningTone(400);
   } else if (abs(stepCount_motor1) > 1.5*MICROSTEPPING || abs(stepCount_motor2) > 1.5*MICROSTEPPING){
     playWarningTone(300);
   } else if (abs(stepCount_motor1) > MICROSTEPPING || abs(stepCount_motor2) > MICROSTEPPING){
     playWarningTone(200);
-  }
+  }*/
 
   stepMotors(stepCount_motor1,stepCount_motor2);
 }
 
 void disableBot(){
   Serial.println("disabling bot");
-  playWarningToneWithDuration(4000,2000);
+  playWarningToneWithDuration(4000,750);
   disableTime = millis();
   
   enable = false;

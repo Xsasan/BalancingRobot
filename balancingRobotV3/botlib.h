@@ -11,7 +11,7 @@
 
 // ---------------------  START custom settings  ---------------------
 const float MAX_FULL_STEPS_PER_SECOND = 900;
-const float MAX_BODY_SPEED_FACTOR_DEFAULT = 0.5;
+const float MAX_BODY_SPEED_FACTOR_DEFAULT = 0.45;
 float MAX_BODY_SPEED_FACTOR = MAX_BODY_SPEED_FACTOR_DEFAULT/2.0;
 // ---------------------  END custom settings  -----------------------
 
@@ -44,6 +44,8 @@ const float PID_ANGLE_MAX = 100;
 
 const int I2C_ADDRESS_MAGNETOMETER = 0x0C;
 const float COMPASS_RANGE_FACTOR = 4800.0 / 32768.0;
+
+const float RAMPUP_SPEED_COEFFICIENT = 0.0015;
 
 
 float ensureRange(float value, float val1, float val2) {
@@ -104,9 +106,8 @@ float pid_speed_setpoint = 0.0;
 float rotation_speed_setpoint = 0.0;
 
 void rampupDirectionControl(){
-  float coefficient = 0.002;
-  pid_speed_setpoint = pid_speed_setpoint * (1-coefficient) + target_speed * coefficient;
-  rotation_speed_setpoint  = rotation_speed_setpoint * (1-coefficient) + target_rotation_speed * coefficient;
+  pid_speed_setpoint = pid_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_speed * RAMPUP_SPEED_COEFFICIENT;
+  rotation_speed_setpoint  = rotation_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_rotation_speed * RAMPUP_SPEED_COEFFICIENT;
 
   if (abs(target_speed - pid_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
     pid_speed_setpoint = target_speed;
@@ -154,15 +155,15 @@ void stop(){
 }
 
 void speed(int value){
-	MAX_BODY_SPEED_FACTOR = value/10 * MAX_BODY_SPEED_FACTOR_DEFAULT;
+	MAX_BODY_SPEED_FACTOR = value/10.0 * MAX_BODY_SPEED_FACTOR_DEFAULT;
 }
 
 long lastWarningTone;
 static int DEFAULT_WARNING_TONE_DURATION = 200;
 
 void playWarningToneWithDuration(int frequency, int duration){
-  if (millis()-lastWarningTone >  DEFAULT_WARNING_TONE_DURATION){
-    tone(PIN_BUZZER, frequency, DEFAULT_WARNING_TONE_DURATION);
+  if (millis()-lastWarningTone >  duration){
+    tone(PIN_BUZZER, frequency, duration);
   }
 }
 
@@ -191,7 +192,7 @@ void serialReadDirection() {
       case 'I': forward_right(); break;
       case 'H': backward_left(); break;
       case 'J': backward_right(); break;
-      case 'V': playWarningToneWithDuration(150,3000); break;
+      case 'V': playWarningToneWithDuration(150,750); break;
       case 'v': /* Horn off */ break;
       case 'X': /* extra on */ break;
       case 'x': /* extra off */ break;
