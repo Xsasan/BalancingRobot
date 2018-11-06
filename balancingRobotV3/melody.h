@@ -404,4 +404,10 @@ const int MELODY_PIRATE_CARIBBEAN[] = {
   
   NOTE_A4, 500, 1000
 };
+
+short MELODY_DUMMY[] = {
+  NOTE_C4, 500, 300,
+  NOTE_B4, 500, 300,
+  NOTE_A4, 500, 600,
+};
 // ------------------------  END music  ------------------------

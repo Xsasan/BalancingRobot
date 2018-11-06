@@ -138,6 +138,9 @@ long disableTime = 0;
 
 const float RAMPUP_SPEED_COEFFICIENT = 0.0015;
 
+float pid_position_setpoint_motor1 = 0.0;
+float pid_position_setpoint_motor2 = 0.0;
+
 float howManySteps(float pid_angle_output, float& stepsPerSecond, float& partialSteps, long motor_step_iteration_interval, float rotation_stepsPerSecond, float max_accelleration) {
   float factor = (float)pid_angle_output / PID_ANGLE_MAX;
   float lastStepsPerSecond = stepsPerSecond;
@@ -203,58 +206,6 @@ void rampupDirectionControl(){
   }
 }
 
-void forward(){
-	target_speed = 1; target_rotation_speed = 0;
-}
-
-void backward(){
-	target_speed = -1; target_rotation_speed = 0;
-}
-
-void left(){
-	target_speed = 0; target_rotation_speed = -0.7;
-}
-
-void head_left(){
-	target_speed = 0; target_head_rotation_speed = -0.7;
-}
-
-void right(){
-	target_speed = 0; target_rotation_speed = 0.7; 
-}
-
-void head_right(){
-	target_speed = 0; target_head_rotation_speed = 0.7;
-}
-
-void forward_left(){
-	target_speed = 1; target_rotation_speed = -0.33;
-}
-
-void forward_right(){
-	target_speed = 1; target_rotation_speed = 0.33;
-}
-
-void backward_left(){
-	target_speed = -1; target_rotation_speed = 0.33;
-}
-
-void backward_right(){
-	target_speed = -1; target_rotation_speed = -0.33;
-}
-
-void stop(){
-	target_speed = 0; target_rotation_speed = 0;
-}
-
-void head_stop(){
-	target_speed = 0; target_head_rotation_speed = 0;
-}
-
-void speed(int value){
-	max_body_speed_factor = value/10.0 * MAX_BODY_SPEED_FACTOR_LIMIT;
-}
-
 long lastWarningTone;
 static int DEFAULT_WARNING_TONE_DURATION = 200;
 
@@ -267,70 +218,6 @@ void playWarningToneWithDuration(int frequency, int duration){
 void playWarningTone(int frequency){
   playWarningToneWithDuration(frequency, DEFAULT_WARNING_TONE_DURATION);
 }
-
-extern boolean playMusicModeActive;
-void serialReadDirection() {
-  if (Serial.available() > 0) {
-     lastDirectionInput = millis();
-     mode = SPEED_MODE;
-  
-     char c = Serial.read();
-     boolean validInput = true;
-
-     switch (c){
-      case 'f': forward(); break;
-      case 'F': forward(); break;
-      case 'b': backward(); break;
-      case 'B': backward(); break;
-      case 'l': left(); break;
-      case 'L': left(); break;
-      case 'r': right(); break;
-      case 'R': right(); break;
-      case 'G': forward_left(); break;
-      case 'I': forward_right(); break;
-      case 'H': backward_left(); break;
-      case 'J': backward_right(); break;
-      case 'V': playWarningToneWithDuration(250,750); break;
-      case 'v': /* Horn off */ break;
-      case 'X': playMusicModeActive= true; break;
-      case 'x': playMusicModeActive= false; break;
-      case 'W': head_left(); break;
-      case 'w': head_stop(); break;
-      case 'U': head_right(); break;
-      case 'u': head_stop(); break;
-      case 'D': stop(); break;
-      case 'S': stop(); break;
-      case '0': stop(); break;
-      case '1': speed(1); break;
-      case '2': speed(2); break;
-      case '3': speed(3); break;
-      case '4': speed(4); break;
-      case '5': speed(5); break;
-      case '6': speed(6); break;
-      case '7': speed(7); break;
-      case '8': speed(8); break;
-      case '9': speed(9); break;
-      case 'q': speed(10); break;
-      default: validInput = false;
-     }
-
-     if (validInput){
-        target_speed *= MAX_STEPS_PER_SECOND * max_body_speed_factor;
-        target_rotation_speed *= MAX_STEPS_PER_SECOND * max_body_speed_factor;
-     }
-  } else {
-    if (millis() - lastDirectionInput > 2000){
-      stopSpeedRemoteControl();
-    }
-  }
-
-  if (mode == SPEED_MODE){
-    rampupDirectionControl();
-  }
-}
-
-float pid_position_setpoint_motor1 = 0.0;
-float pid_position_setpoint_motor2 = 0.0;
 
 void serialReadPosition() {
   if (Serial.available() > 0) {
