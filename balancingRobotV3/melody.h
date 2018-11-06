@@ -1,0 +1,407 @@
+
+// ------------------------ START music ------------------------
+// Note, On duration, Off duration
+int startup_melody[] = {
+  NOTE_C4, 250, 30,
+  NOTE_G3, 125, 30,
+  NOTE_G3, 125, 30,
+  NOTE_A3, 250, 30,
+  NOTE_G3, 250, 300,
+  NOTE_B3, 250, 30,
+  NOTE_C4, 250, 30
+};
+int startup_melody_size = sizeof(startup_melody);
+
+const int MELODY_STAR_WARS[] = {
+  NOTE_A4, 500, 30,
+  NOTE_A4, 500, 30,
+  NOTE_A4, 500, 30,
+  NOTE_F4, 350, 30,
+  NOTE_C5, 150, 30,
+  NOTE_A4, 500, 30,
+  NOTE_F4, 350, 30,
+  NOTE_C5, 150, 30,
+  NOTE_A4, 650, 500,
+  
+  NOTE_E5, 500, 30,
+  NOTE_E5, 500, 30,
+  NOTE_E5, 500, 30,
+  NOTE_F5, 350, 30,
+  NOTE_C5, 150, 30,
+  NOTE_GS4, 500, 30,
+  NOTE_F4, 350, 30,
+  NOTE_C5, 150, 30,
+  NOTE_A4, 650, 500,
+  
+  NOTE_A5, 500, 30,
+  NOTE_A4, 300, 30,
+  NOTE_A4, 150, 30,
+  NOTE_A5, 500, 30,
+  NOTE_GS5, 325, 30,
+  NOTE_G5, 175, 30,
+  NOTE_FS5, 125, 30,
+  NOTE_F5, 125, 30,
+  NOTE_FS5, 250, 325,
+  
+  455, 250, 30,
+  NOTE_DS5, 500, 30,
+  NOTE_D5, 325, 30,
+  NOTE_CS5, 175, 30,
+  NOTE_C5, 125, 30,
+  NOTE_AS4, 125, 30,
+  NOTE_C5, 250, 350,
+  
+  NOTE_F4, 250, 30,
+  NOTE_GS4, 500, 30,
+  NOTE_F4, 350, 30,
+  NOTE_A4, 125, 30,
+  NOTE_C5, 500, 30,
+  NOTE_A4, 375, 30,
+  NOTE_C5, 125, 30,
+  NOTE_E5, 650, 500,
+  
+  NOTE_A5, 500, 30,
+  NOTE_A4, 300, 30,
+  NOTE_A4, 150, 30,
+  NOTE_A5, 500, 30,
+  NOTE_GS5, 325, 30,
+  NOTE_G5, 175, 30,
+  NOTE_FS5, 125, 30,
+  NOTE_F5, 125, 30,
+  NOTE_FS5, 250, 325,
+  
+  455, 250, 30,
+  NOTE_DS5, 500, 30,
+  NOTE_D5, 325, 30,
+  NOTE_CS5, 175, 30,
+  NOTE_C5, 125, 30,
+  NOTE_AS4, 125, 30,
+  NOTE_C5, 250, 350,
+  
+  NOTE_F4, 250, 30,
+  NOTE_GS4, 500, 30,
+  NOTE_F4, 375, 30,
+  NOTE_C5, 125, 30,
+  NOTE_A4, 500, 30,
+  NOTE_F4, 375, 30,
+  NOTE_C5, 125, 30,
+  NOTE_A4, 650, 650
+};
+
+const int MELODY_SUPER_MARIO[] {
+  NOTE_E7, 250, 30,
+  NOTE_E7, 250, 150,
+  NOTE_E7, 250, 150,
+  NOTE_C7, 250, 30,
+  NOTE_E7, 250, 150,
+  NOTE_G7, 250, 330,
+  NOTE_G6, 250, 330,
+ 
+  NOTE_C7, 250, 180,
+  NOTE_G6, 250, 180,
+  NOTE_E6, 250, 180,
+  NOTE_A6, 180, 90,
+  NOTE_B6, 180, 90,
+  NOTE_AS6, 180, 30,
+  NOTE_A6, 180, 90,
+ 
+  NOTE_G6, 180, 30,
+  NOTE_E7, 180, 30,
+  NOTE_G7, 180, 30,
+  NOTE_A7, 250, 180,
+  NOTE_F7, 250, 30,
+  NOTE_G7, 250, 30,
+  NOTE_E7, 250, 180,
+  NOTE_C7, 250, 30,
+  NOTE_D7, 250, 30,
+  NOTE_B6, 250, 330,
+ 
+  NOTE_C7, 250, 180,
+  NOTE_G6, 250, 180,
+  NOTE_E6, 250, 180,
+  NOTE_A6, 180, 90,
+  NOTE_B6, 180, 90,
+  NOTE_AS6, 180, 30,
+  NOTE_A6, 180, 90,
+ 
+  NOTE_G6, 180, 30,
+  NOTE_E7, 180, 30,
+  NOTE_G7, 180, 30,
+  NOTE_A7, 250, 180,
+  NOTE_F7, 250, 30,
+  NOTE_G7, 250, 180,
+  NOTE_E7, 250, 180,
+  NOTE_C7, 250, 30,
+  NOTE_D7, 250, 30,
+  NOTE_B6, 250, 330,
+
+  // underworld
+  NOTE_C4, 180, 30,
+  NOTE_C5, 180, 30,
+  NOTE_A3, 180, 30,
+  NOTE_A4, 180, 30,
+  NOTE_AS3, 180, 30,
+  NOTE_AS4, 180, 330,
+  
+  NOTE_C4, 180, 30,
+  NOTE_C5, 180, 30,
+  NOTE_A3, 180, 30,
+  NOTE_A4, 180, 30,
+  NOTE_AS3, 180, 30,
+  NOTE_AS4, 180, 330,
+  
+  NOTE_F3, 180, 30,
+  NOTE_F4, 180, 30,
+  NOTE_D3, 180, 30,
+  NOTE_D4, 180, 30,
+  NOTE_DS3, 180, 30,
+  NOTE_DS4, 180, 330,
+  
+  NOTE_F3, 180, 30,
+  NOTE_F4, 180, 30,
+  NOTE_D3, 180, 30,
+  NOTE_D4, 180, 30,
+  NOTE_DS3, 180, 30,  
+  NOTE_DS4, 180, 330,
+  
+  NOTE_DS4, 90, 30,
+  NOTE_CS4, 270, 30,
+  NOTE_D4, 270, 30,
+  
+  NOTE_CS4, 90, 30,
+  NOTE_DS4, 90, 30,
+  
+  NOTE_DS4, 90, 30,
+  NOTE_GS3, 90, 30,
+  
+  NOTE_G3, 90, 30,
+  NOTE_CS4, 90, 30,
+  
+  NOTE_C4, 270, 30,
+  NOTE_FS4, 270, 30,
+  NOTE_F4, 270, 30,  
+  NOTE_E3, 270, 30,
+  NOTE_AS4, 270, 30,
+  NOTE_A4, 270, 30,
+  
+  NOTE_GS4, 135, 30,
+  NOTE_DS4, 135, 30,
+  NOTE_B3, 135, 30,
+  
+  NOTE_AS3, 135, 30,
+  NOTE_A3, 135, 30,
+  NOTE_GS3, 135, 500
+};
+
+const int MELODY_PIRATE_CARIBBEAN[] = {
+  NOTE_E4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 250, 30,
+  NOTE_A4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_B4, 125, 30,
+  NOTE_C5, 250, 30,
+  NOTE_C5, 125, 155,
+  
+  NOTE_C5, 125, 30,
+  NOTE_D5, 125, 30,
+  NOTE_B4, 250, 30,
+  NOTE_B4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 375, 155,
+   
+   
+  NOTE_E4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 250, 30,
+  NOTE_A4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_B4, 125, 30,
+  NOTE_C5, 250, 30,
+  NOTE_C5, 125, 155,
+  
+  NOTE_C5, 125, 30,
+  NOTE_D5, 125, 30,
+  NOTE_B4, 250, 30,
+  NOTE_B4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 375, 155,
+	
+	
+  NOTE_E4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 250, 30,
+  NOTE_A4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_C5, 125, 30,
+  NOTE_D5, 250, 30,
+  NOTE_D5, 125, 155,
+  
+  NOTE_D5, 125, 30,
+  NOTE_E5, 125, 30,
+  NOTE_F5, 250, 30,
+  NOTE_F5, 125, 155,
+  
+  NOTE_E5, 125, 30,
+  NOTE_D5, 125, 30,
+  NOTE_E5, 250, 30,
+  NOTE_A4, 125, 155,
+  
+   
+  NOTE_A4, 125, 30,
+  NOTE_B4, 125, 30,
+  NOTE_C5, 250, 30,
+  NOTE_C5, 125, 155,
+  
+  NOTE_D5, 250, 30,
+  NOTE_E5, 125, 30,
+  NOTE_A4, 250, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_C5, 125, 30,
+  NOTE_B4, 250, 30,
+  NOTE_B4, 125, 155,
+  
+  NOTE_C5, 125, 30,
+  NOTE_A4, 125, 30,
+  NOTE_B4, 375, 405,
+
+  
+  NOTE_A4, 250, 30,
+  NOTE_A4, 125, 30,
+  //Repeat of first part
+  NOTE_E4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 250, 30,
+  NOTE_A4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_B4, 125, 30,
+  NOTE_C5, 250, 30,
+  NOTE_C5, 125, 155,
+  
+  NOTE_C5, 125, 30,
+  NOTE_D5, 125, 30,
+  NOTE_B4, 250, 30,
+  NOTE_B4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 375, 155,
+   
+   
+  NOTE_E4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 250, 30,
+  NOTE_A4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_B4, 125, 30,
+  NOTE_C5, 250, 30,
+  NOTE_C5, 125, 155,
+  
+  NOTE_C5, 125, 30,
+  NOTE_D5, 125, 30,
+  NOTE_B4, 250, 30,
+  NOTE_B4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 375, 155,
+	
+	
+  NOTE_E4, 125, 30,
+  NOTE_G4, 125, 30,
+  NOTE_A4, 250, 30,
+  NOTE_A4, 125, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_C5, 125, 30,
+  NOTE_D5, 250, 30,
+  NOTE_D5, 125, 155,
+  
+  NOTE_D5, 125, 30,
+  NOTE_E5, 125, 30,
+  NOTE_F5, 250, 30,
+  NOTE_F5, 125, 155,
+  
+  NOTE_E5, 125, 30,
+  NOTE_D5, 125, 30,
+  NOTE_E5, 250, 30,
+  NOTE_A4, 125, 155,
+  
+   
+  NOTE_A4, 125, 30,
+  NOTE_B4, 125, 30,
+  NOTE_C5, 250, 30,
+  NOTE_C5, 125, 155,
+  
+  NOTE_D5, 250, 30,
+  NOTE_E5, 125, 30,
+  NOTE_A4, 250, 155,
+  
+  NOTE_A4, 125, 30,
+  NOTE_C5, 125, 30,
+  NOTE_B4, 250, 30,
+  NOTE_B4, 125, 155,
+  
+  NOTE_C5, 125, 30,
+  NOTE_A4, 125, 30,
+  NOTE_B4, 375, 405,
+  //End of Repeat
+
+  NOTE_E5, 250, 530,
+  
+  NOTE_F5, 250, 530,
+    
+  NOTE_E5, 125, 30,
+  NOTE_E5, 125, 155,
+  
+  NOTE_G5, 125, 155,
+  
+  NOTE_E5, 125, 30,
+  NOTE_D5, 125, 530,  
+  
+  NOTE_D5, 250, 530,
+  
+  NOTE_C5, 250, 530,
+  
+  NOTE_B4, 125, 30,
+  NOTE_C5, 125, 155,
+  
+  NOTE_B4, 125, 155,
+  
+  NOTE_A4, 500, 30,
+  
+
+  NOTE_E5, 250, 530,
+  
+  NOTE_F5, 250, 530,
+  
+  NOTE_E5, 125, 30,
+  NOTE_E5, 125, 155,
+  
+  NOTE_G5, 125, 30,
+  
+  NOTE_E5, 125, 30,
+  NOTE_D5, 125, 530,
+  
+  NOTE_D5, 250, 530,
+  
+  NOTE_C5, 250, 530,
+  
+  NOTE_B4, 125, 30,
+  NOTE_C5, 125, 155,
+  
+  NOTE_B4, 125, 155,
+  
+  NOTE_A4, 500, 1000
+};
+// ------------------------  END music  ------------------------
