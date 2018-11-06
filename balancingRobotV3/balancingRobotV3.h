@@ -623,3 +623,38 @@ void calculatePidSpeedSetpoint() {
   pid_speed_setpoint = 0.0 + (pid_position_output_motor1+pid_position_output_motor2)/2 / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * max_body_speed_factor;
   rotation_speed_setpoint = 0.0 + (pid_position_output_motor1-pid_position_output_motor2) / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * max_body_speed_factor;
 }
+
+extern int melody[];
+void setup() {
+  Serial.begin(57600); // startup serial communication with given baud rate
+  Serial.println("\nStartup...");
+  readAndInitErrorRegister(); // log the cause of the last restart, i.e. power loss
+
+  // set motor control pins to output mode
+  pinMode(PIN_MOTOR_1_STEP, OUTPUT);
+  pinMode(PIN_MOTOR_2_STEP, OUTPUT);
+  pinMode(PIN_MOTOR_3_STEP, OUTPUT);
+  pinMode(PIN_MOTOR_1_DIRECTION, OUTPUT);
+  pinMode(PIN_MOTOR_2_DIRECTION, OUTPUT);
+  pinMode(PIN_MOTOR_3_DIRECTION, OUTPUT);
+
+  // set buzzer and power limit pin to output mode
+  pinMode(PIN_BUZZER, OUTPUT);
+  pinMode(PIN_POWER_LIMIT, OUTPUT);
+
+  // set PWM on Pins 9 and 10 to 31250 Hz instead of default 488 Hz
+  // for better reaction of power target (only works when power target is controlled with one of these pins)
+  TCCR1B = TCCR1B & 0b11111000 | 0x01;
+  
+  setPowerLimit();
+  _delay_us(POWER_LIMIT_SETTLE_TIME_MICROS); // wait for power limit to stabilize (capacitor chargeup)
+
+  // initialize stepper by doing one step
+  stepMotors(MICROSTEPPING, MICROSTEPPING, MICROSTEPPING);
+
+  setupMPU9250();
+
+  playMelody(melody);
+
+  waitForTargetAngle();
+}
