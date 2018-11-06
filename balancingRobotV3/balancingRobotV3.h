@@ -1,3 +1,8 @@
+#include "I2Cdev.h"
+#include <digitalWriteFast.h>
+#include "notes.h"
+#include "util/delay.h"
+
 #define I2C_ADDRESS_GYRO  0x68
 #define MOTOR_LEFT_ID 0
 #define MOTOR_RIGHT_ID 1
@@ -10,11 +15,18 @@
 #define PIN_MOTOR_3_DIRECTION 15
 #define MINIMUM_PIN_DELAY_MICROS 1.9
 
-// ---------------------  START custom settings  ---------------------
+// --------------------- START custom settings ---------------------
 const float MAX_FULL_STEPS_PER_SECOND = 900;
-const float MAX_BODY_SPEED_FACTOR_DEFAULT = 0.45;
-float MAX_BODY_SPEED_FACTOR = MAX_BODY_SPEED_FACTOR_DEFAULT/2.0;
-// ---------------------  END custom settings  -----------------------
+const float MAX_BODY_SPEED_FACTOR_LIMIT = 0.45;
+float max_body_speed_factor = MAX_BODY_SPEED_FACTOR_LIMIT/2.0;
+
+extern const float INITIAL_TARGET_ANGLE;
+extern const float STARTUP_ANGLE_TOLERANCE;
+extern const float TIPOVER_ANGLE_OFFSET; // stop motors if bot has tipped over
+extern const float MAX_ACCELLERATION;
+const float MAX_ACCELLERATION_UNTIL_FULL_STEPS_PER_SECOND = MAX_FULL_STEPS_PER_SECOND/2.0;
+extern const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT; // how much to use gyro value compared to accerelometer value
+// ---------------------  END custom settings  ---------------------
 
 // --------------------- START hardware settings ---------------------
 const int MOTOR_STEPS_PER_360 = 200;
@@ -41,13 +53,89 @@ const int PIN_POWER_LIMIT = 9;
 
 // --------------------- START PID settings ---------------------
 const float PID_ANGLE_MAX = 100;
-// ---------------------- END PID settings ----------------------
+extern const float PID_ANGLE_P_GAIN;
+extern const float PID_ANGLE_I_GAIN;
+extern const float PID_ANGLE_D_GAIN;
+extern const float PID_ANGLE_I_MAX;
+extern const float PID_ANGLE_D_MAX;
+
+const float PID_SPEED_MAX = 100;
+extern const float PID_SPEED_P_GAIN;
+extern const float PID_SPEED_I_GAIN;
+extern const float PID_SPEED_D_GAIN;
+extern const float PID_SPEED_I_MAX;
+extern const float PID_SPEED_D_MAX;
+
+const float PID_POSITION_MAX = 100;
+extern const float PID_POSITION_P_GAIN;
+extern const float PID_POSITION_I_GAIN;
+extern const float PID_POSITION_D_GAIN;
+extern const float PID_POSITION_I_MAX;
+extern const float PID_POSITION_D_MAX;
+// --------------------- END PID settings ---------------------
+
+// --------------------- START pid variables ---------------------
+float pid_angle_setpoint_motor1;
+float pid_angle_setpoint_motor2;
+float pid_angle_output_motor1;
+float pid_angle_output_motor2;
+float pid_angle_i_motor1;
+float pid_angle_i_motor2;
+
+float pid_speed_output_motor1;
+float pid_speed_output_motor2;
+float pid_speed_i_motor1;
+float pid_speed_i_motor2;
+
+float pid_position_output_motor1;
+float pid_position_output_motor2;
+float pid_position_i_motor1;
+float pid_position_i_motor2;
+// ---------------------  END pid variables  ---------------------
+
+// --------------------- START accelgyro variables ---------------------
+float ax, ay, az;
+float gx, gy, gz;
+float mx, my, mz;
+// ---------------------  END accelgyro variables  ---------------------
+
+// --------------------- START pitch calculation variables ---------------------
+float pitch;
+float pitchChange;
+float pitchAcc;
+float pid_angle_error_motor1;
+float pid_angle_error_motor2;
+unsigned long lastPitchCalculationTime;
+unsigned long pitchCalculation_delta_t;
+// ---------------------  END pitch calculation variables  ---------------------
+
+// --------------------- START speed calculation variables ---------------------
+const float BODY_SPEED_COEFFICIENT = 0.02;
+float bodySpeed;
+float pid_speed_error_motor1;
+float pid_speed_error_motor2;
+// ---------------------  END speed calculation variables  ---------------------
+
+// --------------------- START position calculation variables ---------------------
+float pid_position_error_motor1;
+float pid_position_error_motor2;
+unsigned long lastPositionCalculationTime;
+unsigned long positionCalculation_delta_t;
+// ---------------------  END position calculation variables  ---------------------
+
+// --------------------- START step calculation variables ---------------------
+float partialSteps_motor1;
+float partialSteps_motor2;
+float partialSteps_motor3;
+float stepsPerSecond_motor1;
+float stepsPerSecond_motor2;
+float stepsPerSecond_motor3;
+// ---------------------  END step calculation variables  ---------------------
 
 const int I2C_ADDRESS_MAGNETOMETER = 0x0C;
 const float COMPASS_RANGE_FACTOR = 4800.0 / 32768.0;
 
 const float RAMPUP_SPEED_COEFFICIENT = 0.0015;
-const float RAMPUP_HEAD_SPEED_COEFFICIENT = 0.0015;
 
 
 float ensureRange(float value, float val1, float val2) {
@@ -81,7 +169,6 @@ int calculateStepCount(float pid_angle_output, float& stepsPerSecond, float& par
 }
 
 void getCompassData(void) {
-  float mx, my, mz;
   uint8_t buffer[6];
   I2Cdev::readBytes(0x0C, 0x03, 6, buffer);
 
@@ -90,9 +177,9 @@ void getCompassData(void) {
   mz = (((int16_t)(buffer[5]) << 8) | buffer[4]) * COMPASS_RANGE_FACTOR;
 }
 
-float target_speed = 0.0;
-float target_rotation_speed = 0.0;
-float target_head_rotation_speed = 0.0;
+float target_speed;
+float target_rotation_speed;
+float target_head_rotation_speed;
 
 void stopSpeedRemoteControl(){
    target_speed = 0;
@@ -111,18 +198,18 @@ float head_rotation_speed_setpoint = 0.0;
 
 void rampupDirectionControl(){
   pid_speed_setpoint = pid_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_speed * RAMPUP_SPEED_COEFFICIENT;
-  rotation_speed_setpoint = rotation_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_rotation_speed * RAMPUP_SPEED_COEFFICIENT;
-  head_rotation_speed_setpoint = head_rotation_speed_setpoint * (1-RAMPUP_HEAD_SPEED_COEFFICIENT) + target_head_rotation_speed * RAMPUP_HEAD_SPEED_COEFFICIENT;
+  rotation_speed_setpoint  = rotation_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_rotation_speed * RAMPUP_SPEED_COEFFICIENT;
+  head_rotation_speed_setpoint  = head_rotation_speed_setpoint * (1-RAMPUP_SPEED_COEFFICIENT) + target_head_rotation_speed * RAMPUP_SPEED_COEFFICIENT;
 
-  if (abs(target_speed - pid_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
+  if (abs(target_speed - pid_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*max_body_speed_factor)){
     pid_speed_setpoint = target_speed;
   }
 
-  if (abs(target_rotation_speed - rotation_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
+  if (abs(target_rotation_speed - rotation_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*max_body_speed_factor)){
     rotation_speed_setpoint = target_rotation_speed;
   }
   
-  if (abs(target_head_rotation_speed - head_rotation_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*MAX_BODY_SPEED_FACTOR)){
+  if (abs(target_head_rotation_speed - head_rotation_speed_setpoint) < (0.02*MAX_STEPS_PER_SECOND*max_body_speed_factor)){
     head_rotation_speed_setpoint = target_head_rotation_speed;
   }
 }
@@ -176,7 +263,7 @@ void head_stop(){
 }
 
 void speed(int value){
-	MAX_BODY_SPEED_FACTOR = value/10.0 * MAX_BODY_SPEED_FACTOR_DEFAULT;
+	max_body_speed_factor = value/10.0 * MAX_BODY_SPEED_FACTOR_LIMIT;
 }
 
 long lastWarningTone;
@@ -238,8 +325,9 @@ void serialReadDirection() {
      }
 
      if (validInput){
-        target_speed *= MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
-        target_rotation_speed *= MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
+        target_speed *= MAX_STEPS_PER_SECOND * max_body_speed_factor;
+        target_rotation_speed *= MAX_STEPS_PER_SECOND * max_body_speed_factor;
+        target_head_rotation_speed *= MAX_STEPS_PER_SECOND * max_body_speed_factor;
      }
   } else {
     if (millis() - lastDirectionInput > 2000){
@@ -389,6 +477,76 @@ void readAndInitErrorRegister() {
   MCUSR = 0x00;
 }
 
+float calculatePidSpeed(float pid_speed_setpoint, float& pid_speed_i, float& pid_speed_error) {
+  float lastError = pid_speed_error;
+  pid_speed_error = bodySpeed - pid_speed_setpoint;
+  float error_change = pid_speed_error - lastError;
+  float timeFactor = pitchCalculation_delta_t * 0.001;
+
+  // integrate error, but limit it to a reasonable value
+  float pid_i_change = PID_SPEED_I_GAIN * pid_speed_error * timeFactor;
+  pid_speed_i = ensureRange(pid_speed_i + pid_i_change, -PID_SPEED_I_MAX, PID_SPEED_I_MAX);
+
+  float pid_d = PID_SPEED_D_GAIN * error_change * timeFactor;
+  pid_d = ensureRange(pid_d, -PID_SPEED_D_MAX, PID_SPEED_D_MAX);
+
+  float pid = PID_SPEED_MAX / MAX_STEPS_PER_SECOND * 0.1 * (PID_SPEED_P_GAIN * pid_speed_error + pid_speed_i + pid_d);
+
+  return ensureRange(pid, -PID_SPEED_MAX, PID_SPEED_MAX);
+}
+
+void calculatePidAngleSetpoint() {
+  pid_angle_setpoint_motor1 = INITIAL_TARGET_ANGLE + pid_speed_output_motor1 * (0.8 / PID_SPEED_MAX * TIPOVER_ANGLE_OFFSET);
+  pid_angle_setpoint_motor2 = INITIAL_TARGET_ANGLE + pid_speed_output_motor2 * (0.8 / PID_SPEED_MAX * TIPOVER_ANGLE_OFFSET);
+}
+
+float calculatePidPosition(float& pid_position_setpoint, float& pid_position_i, float& pid_position_error, long& motor_steps) {
+  float lastError = pid_position_error;
+  pid_position_error = motor_steps - pid_position_setpoint;
+  float error_change = pid_position_error - lastError;
+  float timeFactor = pitchCalculation_delta_t * 0.001 * 0.1;
+
+  // integrate error, but limit it to a reasonable value
+  float pid_i_change = PID_POSITION_I_GAIN * pid_position_error * timeFactor;
+  pid_position_i = ensureRange(pid_position_i + pid_i_change, -PID_POSITION_I_MAX, PID_POSITION_I_MAX);
+
+  float pid_d = PID_POSITION_D_GAIN * error_change * timeFactor;
+  pid_d = ensureRange(pid_d, -PID_POSITION_D_MAX, PID_POSITION_D_MAX);
+
+  float pid = PID_POSITION_MAX / MAX_STEPS_PER_SECOND * 0.5 * (PID_POSITION_P_GAIN * pid_position_error + pid_position_i + pid_d);
+
+  return ensureRange(pid, -PID_POSITION_MAX, PID_POSITION_MAX);
+}
+
+void calculatePidSpeedSetpoint() {  
+  pid_speed_setpoint = 0.0 + (pid_position_output_motor1+pid_position_output_motor2)/2 / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * max_body_speed_factor;
+  rotation_speed_setpoint = 0.0 + (pid_position_output_motor1-pid_position_output_motor2) / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * max_body_speed_factor;
+}
+
+
+//-------------------------------------------------------------------------
+//--------------------------- helper methos -------------------------------
+//-------------------------------------------------------------------------
+
+int sign(float value) {
+  if (value > 0) {
+    return 1;
+  } else if (value < 0) {
+    return -1;
+  } else {
+    return 0;
+  }
+}
+
+//-------------------------------------------------------------------------
+//---------------------- MPU9250 specific stuff ---------------------------
+//-------------------------------------------------------------------------
+const float ACCERELOMETER_G_CONFIG = 2.0;
+const float GYRO_DEG_PER_SECOND_CONFIG = 250.0;
+
+const float GYRO_RANGE_FACTOR = GYRO_DEG_PER_SECOND_CONFIG / 32768.0;
+const float ACCEL_RANGE_FACTOR = ACCERELOMETER_G_CONFIG / 32768.0;
+
 void setupMPU9250() {
   // init I2C bus
   Wire.begin();
@@ -414,4 +572,16 @@ void setupMPU9250() {
 
   delay(500);
   Serial.println("done!");
+}
+
+void getAccelGyroData(void) {
+  uint8_t buffer[14];
+  I2Cdev::readBytes(I2C_ADDRESS_GYRO, 0x3B, 14, buffer);
+  ax = ((((int16_t)buffer[0]) << 8) | buffer[1]) * ACCEL_RANGE_FACTOR;
+  ay = ((((int16_t)buffer[2]) << 8) | buffer[3]) * ACCEL_RANGE_FACTOR;
+  az = ((((int16_t)buffer[4]) << 8) | buffer[5]) * ACCEL_RANGE_FACTOR;
+  // we don't need temperature, so bits 7 and 8 are ignored
+  gx = ((((int16_t)buffer[8]) << 8) | buffer[9]) * GYRO_RANGE_FACTOR;
+  gy = ((((int16_t)buffer[10]) << 8) | buffer[11]) * GYRO_RANGE_FACTOR;
+  gz = ((((int16_t)buffer[12]) << 8) | buffer[13]) * GYRO_RANGE_FACTOR;
 }

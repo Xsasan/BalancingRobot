@@ -1,15 +1,10 @@
-#include "I2Cdev.h"
-#include <digitalWriteFast.h>
-#include "notes.h"
-#include "util/delay.h"
-#include "botlib.h"
+#include "balancingRobotV3.h"
 
 // --------------------- START custom settings ---------------------
 const float INITIAL_TARGET_ANGLE = 2.5;
 const float STARTUP_ANGLE_TOLERANCE = 3.0;
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
 const float MAX_ACCELLERATION = 150.0;
-const float MAX_ACCELLERATION_UNTIL_FULL_STEPS_PER_SECOND = 450;
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.999; // how much to use gyro value compared to accerelometer value
 // ---------------------  END custom settings  ---------------------
 
@@ -20,77 +15,18 @@ const float PID_ANGLE_D_GAIN = -250;
 const float PID_ANGLE_I_MAX = 20;
 const float PID_ANGLE_D_MAX = 20;
 
-const float PID_SPEED_MAX = 100;
 const float PID_SPEED_P_GAIN = 11.0;
 const float PID_SPEED_I_GAIN = 0.01;
 const float PID_SPEED_D_GAIN = 0;
 const float PID_SPEED_I_MAX = 50000;
 const float PID_SPEED_D_MAX = 10000;
 
-const float PID_POSITION_MAX = 100;
 const float PID_POSITION_P_GAIN = -5;
 const float PID_POSITION_I_GAIN = 0;
 const float PID_POSITION_D_GAIN = 0;
 const float PID_POSITION_I_MAX = 20;
 const float PID_POSITION_D_MAX = 20;
 // --------------------- END PID settings ---------------------
-
-// --------------------- START gyro variables ---------------------
-float ax, ay, az;
-float gx, gy, gz;
-// ---------------------  END gyro variables  ---------------------
-
-// --------------------- START pitch calculation variables ---------------------
-float pitch = INITIAL_TARGET_ANGLE;
-float pitchChange;
-float pitchAcc;
-float pid_angle_error_motor1;
-float pid_angle_error_motor2;
-unsigned long lastPitchCalculationTime;
-unsigned long pitchCalculation_delta_t;
-// ---------------------  END pitch calculation variables  ---------------------
-
-// --------------------- START speed calculation variables ---------------------
-float BODY_SPEED_COEFFICIENT = 0.02;
-float bodySpeed;
-float pid_speed_error_motor1;
-float pid_speed_error_motor2;
-// ---------------------  END speed calculation variables  ---------------------
-
-// --------------------- START position calculation variables ---------------------
-float pid_position_error_motor1;
-float pid_position_error_motor2;
-unsigned long lastPositionCalculationTime;
-unsigned long positionCalculation_delta_t;
-// ---------------------  END position calculation variables  ---------------------
-
-// --------------------- START step calculation variables ---------------------
-float partialSteps_motor1;
-float partialSteps_motor2;
-float partialSteps_motor3;
-float stepsPerSecond_motor1;
-float stepsPerSecond_motor2;
-float stepsPerSecond_motor3;
-// ---------------------  END step calculation variables  ---------------------
-
-// --------------------- START pid variables ---------------------
-float pid_angle_setpoint_motor1 = INITIAL_TARGET_ANGLE;
-float pid_angle_setpoint_motor2 = INITIAL_TARGET_ANGLE;
-float pid_angle_output_motor1;
-float pid_angle_output_motor2;
-float pid_angle_i_motor1;
-float pid_angle_i_motor2;
-
-float pid_speed_output_motor1;
-float pid_speed_output_motor2;
-float pid_speed_i_motor1;
-float pid_speed_i_motor2;
-
-float pid_position_output_motor1;
-float pid_position_output_motor2;
-float pid_position_i_motor1;
-float pid_position_i_motor2;
-// ---------------------  END pid variables  ---------------------
 
 // ------------------------ START music ------------------------
 // notes in the melody:
@@ -103,7 +39,6 @@ int melody[] = {
   NOTE_B3, 250, 30,
   NOTE_C4, 250, 30
 };
-float melodySpeedSlowdown = 1.1;
 // ------------------------  END music  ------------------------
 
 boolean enable = false;
@@ -151,7 +86,7 @@ void startupMelody() {
   for (int thisNote = 0; thisNote < sizeof(melody) / sizeof(int); thisNote += 3) {
     tone(PIN_BUZZER, melody[thisNote], melody[thisNote + 1]);
 
-    delay(melodySpeedSlowdown * (melody[thisNote + 1] + melody[thisNote + 2]));
+    delay(melody[thisNote + 1] + melody[thisNote + 2]);
   }
   noTone(PIN_BUZZER);
 }
@@ -314,84 +249,3 @@ void calculateBodySpeed() {
   bodySpeed = bodySpeed * (1 - BODY_SPEED_COEFFICIENT) + bodyStepsPerSecond * BODY_SPEED_COEFFICIENT;
 }
 
-float calculatePidSpeed(float pid_speed_setpoint, float& pid_speed_i, float& pid_speed_error) {
-  float lastError = pid_speed_error;
-  pid_speed_error = bodySpeed - pid_speed_setpoint;
-  float error_change = pid_speed_error - lastError;
-  float timeFactor = pitchCalculation_delta_t * 0.001;
-
-  // integrate error, but limit it to a reasonable value
-  float pid_i_change = PID_SPEED_I_GAIN * pid_speed_error * timeFactor;
-  pid_speed_i = ensureRange(pid_speed_i + pid_i_change, -PID_SPEED_I_MAX, PID_SPEED_I_MAX);
-
-  float pid_d = PID_SPEED_D_GAIN * error_change * timeFactor;
-  pid_d = ensureRange(pid_d, -PID_SPEED_D_MAX, PID_SPEED_D_MAX);
-
-  float pid = PID_SPEED_MAX / MAX_STEPS_PER_SECOND * 0.1 * (PID_SPEED_P_GAIN * pid_speed_error + pid_speed_i + pid_d);
-
-  return ensureRange(pid, -PID_SPEED_MAX, PID_SPEED_MAX);
-}
-
-void calculatePidAngleSetpoint() {
-  pid_angle_setpoint_motor1 = INITIAL_TARGET_ANGLE + pid_speed_output_motor1 * (0.8 / PID_SPEED_MAX * TIPOVER_ANGLE_OFFSET);
-  pid_angle_setpoint_motor2 = INITIAL_TARGET_ANGLE + pid_speed_output_motor2 * (0.8 / PID_SPEED_MAX * TIPOVER_ANGLE_OFFSET);
-}
-
-float calculatePidPosition(float& pid_position_setpoint, float& pid_position_i, float& pid_position_error, long& motor_steps) {
-  float lastError = pid_position_error;
-  pid_position_error = motor_steps - pid_position_setpoint;
-  float error_change = pid_position_error - lastError;
-  float timeFactor = pitchCalculation_delta_t * 0.001 * 0.1;
-
-  // integrate error, but limit it to a reasonable value
-  float pid_i_change = PID_POSITION_I_GAIN * pid_position_error * timeFactor;
-  pid_position_i = ensureRange(pid_position_i + pid_i_change, -PID_POSITION_I_MAX, PID_POSITION_I_MAX);
-
-  float pid_d = PID_POSITION_D_GAIN * error_change * timeFactor;
-  pid_d = ensureRange(pid_d, -PID_POSITION_D_MAX, PID_POSITION_D_MAX);
-
-  float pid = PID_POSITION_MAX / MAX_STEPS_PER_SECOND * 0.5 * (PID_POSITION_P_GAIN * pid_position_error + pid_position_i + pid_d);
-
-  return ensureRange(pid, -PID_POSITION_MAX, PID_POSITION_MAX);
-}
-
-void calculatePidSpeedSetpoint() {  
-  pid_speed_setpoint = 0.0 + (pid_position_output_motor1+pid_position_output_motor2)/2 / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
-  rotation_speed_setpoint = 0.0 + (pid_position_output_motor1-pid_position_output_motor2) / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * MAX_BODY_SPEED_FACTOR;
-}
-
-
-//-------------------------------------------------------------------------
-//--------------------------- helper methos -------------------------------
-//-------------------------------------------------------------------------
-
-int sign(float value) {
-  if (value > 0) {
-    return 1;
-  } else if (value < 0) {
-    return -1;
-  } else {
-    return 0;
-  }
-}
-
-//-------------------------------------------------------------------------
-//---------------------- MPU9250 specific stuff ---------------------------
-//-------------------------------------------------------------------------
-const float ACCERELOMETER_G_CONFIG = 2.0;
-const float GYRO_DEG_PER_SECOND_CONFIG = 250.0;
-
-const float GYRO_RANGE_FACTOR = GYRO_DEG_PER_SECOND_CONFIG / 32768.0;
-const float ACCEL_RANGE_FACTOR = ACCERELOMETER_G_CONFIG / 32768.0;
-
-void getAccelGyroData(void) {
-  uint8_t buffer[14];
-  I2Cdev::readBytes(I2C_ADDRESS_GYRO, 0x3B, 14, buffer);
-  ax = ((((int16_t)buffer[0]) << 8) | buffer[1]) * ACCEL_RANGE_FACTOR;
-  ay = ((((int16_t)buffer[2]) << 8) | buffer[3]) * ACCEL_RANGE_FACTOR;
-  az = ((((int16_t)buffer[4]) << 8) | buffer[5]) * ACCEL_RANGE_FACTOR;
-  // we don't need temperature, so bits 7 and 8 are ignored
-  gx = ((((int16_t)buffer[8]) << 8) | buffer[9]) * GYRO_RANGE_FACTOR;
-  gy = ((((int16_t)buffer[10]) << 8) | buffer[11]) * GYRO_RANGE_FACTOR;
-  gz = ((((int16_t)buffer[12]) << 8) | buffer[13]) * GYRO_RANGE_FACTOR;
-}
