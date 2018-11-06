@@ -123,6 +123,7 @@ int balancing_melody_size = sizeof(balancing_melody);
 // ------------------------  END music  ------------------------
 
 unsigned long currentTime = millis();
+boolean playMusicModeActive = false;
 
 int count = 0;
 void debugLoop(){
@@ -152,7 +153,9 @@ void loop() {
   debugLoop();
   serialRead();
 
-  playMusic();
+  if (playMusicModeActive){
+    playMusic();
+  }
 
   if (!enable) {
     waitForTargetAngle();

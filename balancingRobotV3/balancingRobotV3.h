@@ -212,35 +212,35 @@ void backward(){
 }
 
 void left(){
-	target_speed = 0; target_rotation_speed = -0.5;
+	target_speed = 0; target_rotation_speed = -0.7;
 }
 
 void head_left(){
-	target_speed = 0; target_head_rotation_speed = -0.5;
+	target_speed = 0; target_head_rotation_speed = -0.7;
 }
 
 void right(){
-	target_speed = 0; target_rotation_speed = 0.5; 
+	target_speed = 0; target_rotation_speed = 0.7; 
 }
 
 void head_right(){
-	target_speed = 0; target_head_rotation_speed = 0.5;
+	target_speed = 0; target_head_rotation_speed = 0.7;
 }
 
 void forward_left(){
-	target_speed = 1; target_rotation_speed = -0.25;
+	target_speed = 1; target_rotation_speed = -0.33;
 }
 
 void forward_right(){
-	target_speed = 1; target_rotation_speed = 0.25;
+	target_speed = 1; target_rotation_speed = 0.33;
 }
 
 void backward_left(){
-	target_speed = -1; target_rotation_speed = 0.25;
+	target_speed = -1; target_rotation_speed = 0.33;
 }
 
 void backward_right(){
-	target_speed = -1; target_rotation_speed = -0.25;
+	target_speed = -1; target_rotation_speed = -0.33;
 }
 
 void stop(){
@@ -268,6 +268,7 @@ void playWarningTone(int frequency){
   playWarningToneWithDuration(frequency, DEFAULT_WARNING_TONE_DURATION);
 }
 
+extern boolean playMusicModeActive;
 void serialReadDirection() {
   if (Serial.available() > 0) {
      lastDirectionInput = millis();
@@ -289,10 +290,10 @@ void serialReadDirection() {
       case 'I': forward_right(); break;
       case 'H': backward_left(); break;
       case 'J': backward_right(); break;
-      case 'V': playWarningToneWithDuration(150,750); break;
+      case 'V': playWarningToneWithDuration(250,750); break;
       case 'v': /* Horn off */ break;
-      case 'X': /* extra on */ break;
-      case 'x': /* extra off */ break;
+      case 'X': playMusicModeActive= true; break;
+      case 'x': playMusicModeActive= false; break;
       case 'W': head_left(); break;
       case 'w': head_stop(); break;
       case 'U': head_right(); break;
@@ -474,7 +475,7 @@ void enableBot(){
 
 void disableBot(){
   Serial.println("disabling bot");
-  playWarningToneWithDuration(4000,750);
+  playWarningToneWithDuration(3000,500);
   disableTime = millis();
   
   enable = false;
