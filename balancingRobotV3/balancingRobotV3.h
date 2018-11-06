@@ -138,15 +138,6 @@ long disableTime = 0;
 
 const float RAMPUP_SPEED_COEFFICIENT = 0.0015;
 
-void playMelody(int melody[]) {
-  for (int thisNote = 0; thisNote < sizeof(melody) / sizeof(int); thisNote += 3) {
-    tone(PIN_BUZZER, melody[thisNote], melody[thisNote + 1]);
-
-    delay(melody[thisNote + 1] + melody[thisNote + 2]);
-  }
-  noTone(PIN_BUZZER);
-}
-
 float howManySteps(float pid_angle_output, float& stepsPerSecond, float& partialSteps, long motor_step_iteration_interval, float rotation_stepsPerSecond, float max_accelleration) {
   float factor = (float)pid_angle_output / PID_ANGLE_MAX;
   float lastStepsPerSecond = stepsPerSecond;
@@ -624,7 +615,17 @@ void calculatePidSpeedSetpoint() {
   rotation_speed_setpoint = 0.0 + (pid_position_output_motor1-pid_position_output_motor2) / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * max_body_speed_factor;
 }
 
-extern int melody[];
+extern int startup_melody[];
+extern int startup_melody_size;
+void playStartupMelody() {
+  for (int thisNote = 0; thisNote < startup_melody_size / sizeof(int); thisNote += 3) {
+    tone(PIN_BUZZER, startup_melody[thisNote], startup_melody[thisNote + 1]);
+
+    delay(startup_melody[thisNote + 1] + startup_melody[thisNote + 2]);
+  }
+  noTone(PIN_BUZZER);
+}
+
 void setup() {
   Serial.begin(57600); // startup serial communication with given baud rate
   Serial.println("\nStartup...");
@@ -654,7 +655,7 @@ void setup() {
 
   setupMPU9250();
 
-  playMelody(melody);
+  playStartupMelody();
 
   waitForTargetAngle();
 }
