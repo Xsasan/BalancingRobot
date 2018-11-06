@@ -317,7 +317,6 @@ void serialReadDirection() {
      if (validInput){
         target_speed *= MAX_STEPS_PER_SECOND * max_body_speed_factor;
         target_rotation_speed *= MAX_STEPS_PER_SECOND * max_body_speed_factor;
-        target_head_rotation_speed *= MAX_STEPS_PER_SECOND * max_body_speed_factor;
      }
   } else {
     if (millis() - lastDirectionInput > 2000){
