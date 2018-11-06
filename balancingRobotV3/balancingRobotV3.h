@@ -2,8 +2,9 @@
 #include <digitalWriteFast.h>
 #include "notes.h"
 #include "util/delay.h"
+#include "balancingBotV3Helpers.h"
+#include "mpu9250Helpers.h"
 
-#define I2C_ADDRESS_GYRO  0x68
 #define MOTOR_LEFT_ID 0
 #define MOTOR_RIGHT_ID 1
 #define MOTOR_TOP_ID 2
@@ -132,21 +133,18 @@ float stepsPerSecond_motor2;
 float stepsPerSecond_motor3;
 // ---------------------  END step calculation variables  ---------------------
 
-const int I2C_ADDRESS_MAGNETOMETER = 0x0C;
-const float COMPASS_RANGE_FACTOR = 4800.0 / 32768.0;
+boolean enable = false;
+long disableTime = 0;
 
 const float RAMPUP_SPEED_COEFFICIENT = 0.0015;
 
+void playMelody(int melody[]) {
+  for (int thisNote = 0; thisNote < sizeof(melody) / sizeof(int); thisNote += 3) {
+    tone(PIN_BUZZER, melody[thisNote], melody[thisNote + 1]);
 
-float ensureRange(float value, float val1, float val2) {
-  float min = val1 < val2 ? val1 : val2;
-  float max = val1 >= val2 ? val1 : val2;
-  if (value < min) {
-    return min;
-  } else if (value > max) {
-    return max;
+    delay(melody[thisNote + 1] + melody[thisNote + 2]);
   }
-  return value;
+  noTone(PIN_BUZZER);
 }
 
 float howManySteps(float pid_angle_output, float& stepsPerSecond, float& partialSteps, long motor_step_iteration_interval, float rotation_stepsPerSecond, float max_accelleration) {
@@ -477,6 +475,109 @@ void readAndInitErrorRegister() {
   MCUSR = 0x00;
 }
 
+void enableBot(){  
+  enable = true;
+  powerLimit = POWER_LIMIT_STARTUP_VALUE;
+  _delay_us(POWER_LIMIT_SETTLE_TIME_MICROS); 
+}
+
+void disableBot(){
+  Serial.println("disabling bot");
+  playWarningToneWithDuration(4000,750);
+  disableTime = millis();
+  
+  enable = false;
+  stepsPerSecond_motor1 = 0;
+  stepsPerSecond_motor2 = 0;
+  motor_steps[0] = 0;
+  motor_steps[1] = 0;
+  pid_angle_i_motor1 = 0;
+  pid_angle_i_motor2 = 0;
+  pid_speed_i_motor1 = 0;
+  pid_speed_i_motor2 = 0;
+  pid_position_i_motor1 = 0;
+  pid_position_i_motor2 = 0;
+  bodySpeed = 0;
+      
+  pid_angle_setpoint_motor1 = 0;
+  pid_angle_setpoint_motor2 = 0;
+  pid_speed_setpoint = 0;
+  rotation_speed_setpoint = 0;
+  pid_position_setpoint_motor1 = 0;
+  pid_position_setpoint_motor2 = 0;
+  
+  powerLimit = 0;
+}
+
+void calculatePitchWithGyroCoefficient(float gyroCoefficient) {
+  // calulate time between two accel/gyro datasets
+  unsigned long micros2 = micros();
+  pitchCalculation_delta_t = micros2 - lastPitchCalculationTime;
+  lastPitchCalculationTime = micros2;
+
+  float squaresum = ay * ay + az * az;
+  float delta_t_seconds = (float)pitchCalculation_delta_t * 0.000001;
+  pitchChange = gz * delta_t_seconds;
+  pitch += pitchChange;
+  pitchAcc = atan(ax / sqrt(squaresum)) * RAD_TO_DEG;
+
+  // use complementary filter to get accurate pitch fast and without drift
+  pitch = gyroCoefficient * pitch + (1.0 - gyroCoefficient) * pitchAcc;
+}
+
+void calculatePitch() {
+  calculatePitchWithGyroCoefficient(COMPLEMENTARY_FILTER_GYRO_COEFFICIENT);
+}
+
+void waitForTargetAngle() {
+  // wait until bot is reasonably near target angle so we can start
+  Serial.println("Wait until bot alignment is near target angle...");
+  int correctAngleCount = 0;
+  while (correctAngleCount < 10) {
+    delay(50);
+    getAccelGyroData();
+    calculatePitchWithGyroCoefficient(0);
+    Serial.println(pitch);
+    float angleOffset = abs(INITIAL_TARGET_ANGLE - pitch);
+    if (angleOffset < 15){
+      float y = 15.0;
+      playWarningToneWithDuration((y-min(angleOffset,y))/y*500,50);
+    }
+    if (angleOffset < STARTUP_ANGLE_TOLERANCE) {
+      correctAngleCount++;      
+    } else {
+      correctAngleCount = 0;
+    }
+  }
+  enableBot();
+  Serial.println("done!");
+}
+
+float calculatePidAngle(float& pid_angle_setpoint, float& pid_angle_i, float& pid_angle_error) {
+  float lastError = pid_angle_error;
+  pid_angle_error = pitch - pid_angle_setpoint;
+  float error_change = pid_angle_error - lastError;
+  float timeFactor = pitchCalculation_delta_t * 0.001 * 0.1;
+
+  // integrate error, but limit it to a reasonable value
+  float pid_i_change = PID_ANGLE_I_GAIN * pid_angle_error * timeFactor;
+  pid_angle_i = ensureRange(pid_angle_i + pid_i_change, -PID_ANGLE_I_MAX, PID_ANGLE_I_MAX);
+
+  float pid_d = PID_ANGLE_D_GAIN * error_change * timeFactor;
+  pid_d = ensureRange(pid_d, -PID_ANGLE_D_MAX, PID_ANGLE_D_MAX);
+
+  float pid = PID_ANGLE_P_GAIN * pid_angle_error + pid_angle_i + pid_d;
+
+  return ensureRange(pid, -PID_ANGLE_MAX, PID_ANGLE_MAX);
+}
+
+void calculateBodySpeed() {
+  float delta_t_seconds = pitchCalculation_delta_t * 0.001 * 0.1;
+  float factor = pitchChange * STEPS_PER_DEGREE;
+  float bodyStepsPerSecond = (stepsPerSecond_motor1+stepsPerSecond_motor2)/2.0 - factor * gz;
+  bodySpeed = bodySpeed * (1 - BODY_SPEED_COEFFICIENT) + bodyStepsPerSecond * BODY_SPEED_COEFFICIENT;
+}
+
 float calculatePidSpeed(float pid_speed_setpoint, float& pid_speed_i, float& pid_speed_error) {
   float lastError = pid_speed_error;
   pid_speed_error = bodySpeed - pid_speed_setpoint;
@@ -521,67 +622,4 @@ float calculatePidPosition(float& pid_position_setpoint, float& pid_position_i, 
 void calculatePidSpeedSetpoint() {  
   pid_speed_setpoint = 0.0 + (pid_position_output_motor1+pid_position_output_motor2)/2 / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * max_body_speed_factor;
   rotation_speed_setpoint = 0.0 + (pid_position_output_motor1-pid_position_output_motor2) / PID_POSITION_MAX * MAX_STEPS_PER_SECOND * max_body_speed_factor;
-}
-
-
-//-------------------------------------------------------------------------
-//--------------------------- helper methos -------------------------------
-//-------------------------------------------------------------------------
-
-int sign(float value) {
-  if (value > 0) {
-    return 1;
-  } else if (value < 0) {
-    return -1;
-  } else {
-    return 0;
-  }
-}
-
-//-------------------------------------------------------------------------
-//---------------------- MPU9250 specific stuff ---------------------------
-//-------------------------------------------------------------------------
-const float ACCERELOMETER_G_CONFIG = 2.0;
-const float GYRO_DEG_PER_SECOND_CONFIG = 250.0;
-
-const float GYRO_RANGE_FACTOR = GYRO_DEG_PER_SECOND_CONFIG / 32768.0;
-const float ACCEL_RANGE_FACTOR = ACCERELOMETER_G_CONFIG / 32768.0;
-
-void setupMPU9250() {
-  // init I2C bus
-  Wire.begin();
-  Wire.setClock(400000); // "fast mode", default is 100000
-
-  // initialize device
-  Serial.print("Initializing MPU9250...");
-  delay(500);
-  // set clock source to gyro y-axis pll signal instead of internal 8 MHZ oscillator for better quality
-  // this will disable low-power capabilitites but we don't use them anyway
-  I2Cdev::writeBits(I2C_ADDRESS_GYRO, 0x6B, 2, 2, 0x02);
-  // set gyro configruation to 250 deg/s
-  I2Cdev::writeBits(I2C_ADDRESS_GYRO, 0x1B, 4, 2, 0x00);
-  // set gyro configruation to 2g (g = earth gravitation (9.81m/s^2))
-  I2Cdev::writeBits(I2C_ADDRESS_GYRO, 0x1C, 4, 2, 0x00);
-  // enable low-pass filter to 44hz to reduce influence of vibrations
-  I2Cdev::writeBits(I2C_ADDRESS_GYRO, 0x1A, 2, 3, 0x03);
-  // enable magnetometer
-  I2Cdev::writeByte(I2C_ADDRESS_MAGNETOMETER, 0x0A, 0x01);
-  // disable MPU9250 sleep-mode
-  I2Cdev::writeBit(I2C_ADDRESS_GYRO, 0x6B, 6, false);
-
-
-  delay(500);
-  Serial.println("done!");
-}
-
-void getAccelGyroData(void) {
-  uint8_t buffer[14];
-  I2Cdev::readBytes(I2C_ADDRESS_GYRO, 0x3B, 14, buffer);
-  ax = ((((int16_t)buffer[0]) << 8) | buffer[1]) * ACCEL_RANGE_FACTOR;
-  ay = ((((int16_t)buffer[2]) << 8) | buffer[3]) * ACCEL_RANGE_FACTOR;
-  az = ((((int16_t)buffer[4]) << 8) | buffer[5]) * ACCEL_RANGE_FACTOR;
-  // we don't need temperature, so bits 7 and 8 are ignored
-  gx = ((((int16_t)buffer[8]) << 8) | buffer[9]) * GYRO_RANGE_FACTOR;
-  gy = ((((int16_t)buffer[10]) << 8) | buffer[11]) * GYRO_RANGE_FACTOR;
-  gz = ((((int16_t)buffer[12]) << 8) | buffer[13]) * GYRO_RANGE_FACTOR;
 }

@@ -29,7 +29,7 @@ const float PID_POSITION_D_MAX = 20;
 // --------------------- END PID settings ---------------------
 
 // ------------------------ START music ------------------------
-// notes in the melody:
+// Note, On Duration, Off Duration
 int melody[] = {
   NOTE_C4, 250, 30,
   NOTE_G3, 125, 30,
@@ -40,9 +40,6 @@ int melody[] = {
   NOTE_C4, 250, 30
 };
 // ------------------------  END music  ------------------------
-
-boolean enable = false;
-long disableTime = 0;
 
 void debugLoop(){  
     //Serial.println(head_rotation_speed_setpoint);
@@ -77,42 +74,9 @@ void setup() {
 
   setupMPU9250();
 
-  startupMelody();
+  playMelody(melody);
 
   waitForTargetAngle();
-}
-
-void startupMelody() {
-  for (int thisNote = 0; thisNote < sizeof(melody) / sizeof(int); thisNote += 3) {
-    tone(PIN_BUZZER, melody[thisNote], melody[thisNote + 1]);
-
-    delay(melody[thisNote + 1] + melody[thisNote + 2]);
-  }
-  noTone(PIN_BUZZER);
-}
-
-void waitForTargetAngle() {
-  // wait until bot is reasonably near target angle so we can start
-  Serial.println("Wait until bot alignment is near target angle...");
-  int correctAngleCount = 0;
-  while (correctAngleCount < 10) {
-    delay(50);
-    getAccelGyroData();
-    calculatePitchWithGyroCoefficient(0);
-    Serial.println(pitch);
-    float angleOffset = abs(INITIAL_TARGET_ANGLE - pitch);
-    if (angleOffset < 15){
-      float y = 15.0;
-      playWarningToneWithDuration((y-min(angleOffset,y))/y*500,50);
-    }
-    if (angleOffset < STARTUP_ANGLE_TOLERANCE) {
-      correctAngleCount++;      
-    } else {
-      correctAngleCount = 0;
-    }
-  }
-  enableBot();
-  Serial.println("done!");
 }
 
 boolean getAccelGyro = true;
@@ -168,84 +132,5 @@ void loop() {
   }*/
 
   stepMotors(stepCount_motor1,stepCount_motor2,stepCount_motor3);
-}
-
-void disableBot(){
-  Serial.println("disabling bot");
-  playWarningToneWithDuration(4000,750);
-  disableTime = millis();
-  
-  enable = false;
-  stepsPerSecond_motor1 = 0;
-  stepsPerSecond_motor2 = 0;
-  motor_steps[0] = 0;
-  motor_steps[1] = 0;
-  pid_angle_i_motor1 = 0;
-  pid_angle_i_motor2 = 0;
-  pid_speed_i_motor1 = 0;
-  pid_speed_i_motor2 = 0;
-  pid_position_i_motor1 = 0;
-  pid_position_i_motor2 = 0;
-  bodySpeed = 0;
-      
-  pid_angle_setpoint_motor1 = 0;
-  pid_angle_setpoint_motor2 = 0;
-  pid_speed_setpoint = 0;
-  rotation_speed_setpoint = 0;
-  pid_position_setpoint_motor1 = 0;
-  pid_position_setpoint_motor2 = 0;
-  
-  powerLimit = 0;
-}
-
-void enableBot(){  
-  enable = true;
-  powerLimit = POWER_LIMIT_STARTUP_VALUE;
-  _delay_us(POWER_LIMIT_SETTLE_TIME_MICROS); 
-}
-
-void calculatePitch() {
-  calculatePitchWithGyroCoefficient(COMPLEMENTARY_FILTER_GYRO_COEFFICIENT);
-}
-
-void calculatePitchWithGyroCoefficient(float gyroCoefficient) {
-  // calulate time between two accel/gyro datasets
-  unsigned long micros2 = micros();
-  pitchCalculation_delta_t = micros2 - lastPitchCalculationTime;
-  lastPitchCalculationTime = micros2;
-
-  float squaresum = ay * ay + az * az;
-  float delta_t_seconds = (float)pitchCalculation_delta_t * 0.000001;
-  pitchChange = gz * delta_t_seconds;
-  pitch += pitchChange;
-  pitchAcc = atan(ax / sqrt(squaresum)) * RAD_TO_DEG;
-
-  // use complementary filter to get accurate pitch fast and without drift
-  pitch = gyroCoefficient * pitch + (1.0 - gyroCoefficient) * pitchAcc;
-}
-
-float calculatePidAngle(float& pid_angle_setpoint, float& pid_angle_i, float& pid_angle_error) {
-  float lastError = pid_angle_error;
-  pid_angle_error = pitch - pid_angle_setpoint;
-  float error_change = pid_angle_error - lastError;
-  float timeFactor = pitchCalculation_delta_t * 0.001 * 0.1;
-
-  // integrate error, but limit it to a reasonable value
-  float pid_i_change = PID_ANGLE_I_GAIN * pid_angle_error * timeFactor;
-  pid_angle_i = ensureRange(pid_angle_i + pid_i_change, -PID_ANGLE_I_MAX, PID_ANGLE_I_MAX);
-
-  float pid_d = PID_ANGLE_D_GAIN * error_change * timeFactor;
-  pid_d = ensureRange(pid_d, -PID_ANGLE_D_MAX, PID_ANGLE_D_MAX);
-
-  float pid = PID_ANGLE_P_GAIN * pid_angle_error + pid_angle_i + pid_d;
-
-  return ensureRange(pid, -PID_ANGLE_MAX, PID_ANGLE_MAX);
-}
-
-void calculateBodySpeed() {
-  float delta_t_seconds = pitchCalculation_delta_t * 0.001 * 0.1;
-  float factor = pitchChange * STEPS_PER_DEGREE;
-  float bodyStepsPerSecond = (stepsPerSecond_motor1+stepsPerSecond_motor2)/2.0 - factor * gz;
-  bodySpeed = bodySpeed * (1 - BODY_SPEED_COEFFICIENT) + bodyStepsPerSecond * BODY_SPEED_COEFFICIENT;
 }
 
