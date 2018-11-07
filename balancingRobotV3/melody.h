@@ -1,6 +1,6 @@
 
 // ------------------------ START music ------------------------
-// Note, On duration, Off duration
+// Note, Tone duration, Pause duration
 int startup_melody[] = {
   NOTE_C4, 250, 30,
   NOTE_G3, 125, 30,
