@@ -241,17 +241,6 @@ void playMusic(){
    * tone(PIN_BUZZER, balancing_melody[lastMusicTone], balancing_melody[lastMusicTone+1]);
    * interface: tone(pin, tone frequency, tone duration)
    */
-
-  /*if (lastMusicTone == -1) {
-    lastMusicTone = 0;
-    tone(PIN_BUZZER, balancing_melody[lastMusicTone], balancing_melody[lastMusicTone+1]);
-  }
-  if (lastMusicTime > balancing_melody[lastMusicTone+1]) {
-    lastMusicTone = lastMusicTone + 3;
-    lastMusicTime = 0;
-    tone(PIN_BUZZER, balancing_melody[lastMusicTone], balancing_melody[lastMusicTone+1]);
-  }
-  lastMusicTime = lastMusicTime + currentTime;*/
   
 }
 
