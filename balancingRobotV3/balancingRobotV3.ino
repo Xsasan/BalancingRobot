@@ -5,20 +5,20 @@
 const float INITIAL_TARGET_ANGLE = 2.5; // approximation of the angle at which the bot stands still
 const float STARTUP_ANGLE_TOLERANCE = 3.0; // the acceptable range of angle error for start balancing
 const float TIPOVER_ANGLE_OFFSET = 35; // stop motors if bot has tipped over
-const float MAX_ACCELLERATION = 150.0; // maximum acceleration in steps per second per loop iteration
+const float MAX_ACCELLERATION = 200.0; // maximum acceleration in steps per second per loop iteration
 const float COMPLEMENTARY_FILTER_GYRO_COEFFICIENT = 0.999; // how much to use gyro value compared to accerelometer value
 // ---------------------  END custom settings  ---------------------
 
 // --------------------- START PID settings ---------------------
 // pid for controlling angle
-const float PID_ANGLE_P_GAIN = 5; // proportional pid gain
+const float PID_ANGLE_P_GAIN = 6; // proportional pid gain
 const float PID_ANGLE_I_GAIN = 0.05; // integral pid gain
 const float PID_ANGLE_D_GAIN = -250; // differential pid gain
 const float PID_ANGLE_I_MAX = 20; // limit for integral pid
 const float PID_ANGLE_D_MAX = 20; // limit for differential pid
 
 // pid for controlling speed
-const float PID_SPEED_P_GAIN = 11.0;
+const float PID_SPEED_P_GAIN = 13.0;
 const float PID_SPEED_I_GAIN = 0.01;
 const float PID_SPEED_D_GAIN = 0;
 const float PID_SPEED_I_MAX = 50000;
@@ -184,35 +184,35 @@ void backward(){
 }
 
 void left(){
-  target_speed = 0; target_rotation_speed = -0.7;
+  target_speed = 0; target_rotation_speed = -0.8;
 }
 
 void head_left(){
-  target_speed = 0; target_head_rotation_speed = -0.7;
+  target_speed = 0; target_head_rotation_speed = -0.8;
 }
 
 void right(){
-  target_speed = 0; target_rotation_speed = 0.7; 
+  target_speed = 0; target_rotation_speed = 0.8; 
 }
 
 void head_right(){
-  target_speed = 0; target_head_rotation_speed = 0.7;
+  target_speed = 0; target_head_rotation_speed = 0.8;
 }
 
 void forward_left(){
-  target_speed = 1; target_rotation_speed = -0.33;
+  target_speed = 1.0; target_rotation_speed = -0.4;
 }
 
 void forward_right(){
-  target_speed = 1; target_rotation_speed = 0.33;
+  target_speed = 1.0; target_rotation_speed = 0.4;
 }
 
 void backward_left(){
-  target_speed = -1; target_rotation_speed = 0.33;
+  target_speed = -1.0; target_rotation_speed = 0.4;
 }
 
 void backward_right(){
-  target_speed = -1; target_rotation_speed = -0.33;
+  target_speed = -1.0; target_rotation_speed = -0.4;
 }
 
 void stop(){

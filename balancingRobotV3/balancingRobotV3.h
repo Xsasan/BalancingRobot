@@ -18,7 +18,7 @@
 
 // --------------------- START custom settings ---------------------
 const float MAX_FULL_STEPS_PER_SECOND = 900;
-const float MAX_BODY_SPEED_FACTOR_LIMIT = 0.45;
+const float MAX_BODY_SPEED_FACTOR_LIMIT = 0.60;
 float max_body_speed_factor = MAX_BODY_SPEED_FACTOR_LIMIT/2.0;
 
 extern const float INITIAL_TARGET_ANGLE;
